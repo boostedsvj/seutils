@@ -10,7 +10,8 @@ setup(
     url           = 'https://github.com/tklijnsma/seutils.git',
     author        = 'Thomas Klijnsma',
     author_email  = 'tklijnsm@gmail.com',
-    packages      = ['seutils'],
+    # packages      = ['seutils'],
+    py_modules    = ['seutils'],
     zip_safe      = False,
     scripts       = [],
     )

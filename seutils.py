@@ -9,7 +9,7 @@ def setup_logger(name='seutils'):
     else:
         fmt = logging.Formatter(
             fmt = (
-                '\033[33m%(levelname)8s:%(asctime)s:%(module)s:%(lineno)s\033[0m'
+                '\033[33m%(levelname)7s:%(asctime)s:%(module)s:%(lineno)s\033[0m'
                 + ' %(message)s'
                 ),
             datefmt='%Y-%m-%d %H:%M:%S'
@@ -17,10 +17,14 @@ def setup_logger(name='seutils'):
         handler = logging.StreamHandler()
         handler.setFormatter(fmt)
         logger = logging.getLogger(name)
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.WARNING)
         logger.addHandler(handler)
     return logger
 logger = setup_logger()
+
+def debug(flag=True):
+    """Sets the logger level to debug (for True) or warning (for False)"""
+    logger.setLevel(logging.DEBUG if flag else logging.WARNING)
 
 def is_string(string):
     """
@@ -216,7 +220,7 @@ def is_file_or_dir(path):
     Returns 1 if it's a directory
     Returns 2 if it's a file
     """
-    mgm, directory = split_mgm(directory)
+    mgm, path = split_mgm(path)
     cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
     status = get_exitcode(cmd)
     if status == 0:
@@ -297,14 +301,20 @@ def ls_root(paths):
                 root_files.extend(glob.glob(osp.join(path, '*.root')))
         else:
             # Treat path as a SE path
-            stat = is_file_or_dir(path)
-            if stat == 1:
-                # It's a directory
-                root_files.extend([ f for f in ls(path) if f.endswith('.root') ])
-            elif stat == 2:
-                # It's a file
-                root_files.append(format(path))
-            elif stat == 0:
-                logger.warning('Path %s does not exist locally or remotely', path)
+            try:
+                stat = is_file_or_dir(path)
+                if stat == 1:
+                    # It's a directory
+                    root_files.extend([ f for f in ls(path) if f.endswith('.root') ])
+                elif stat == 2:
+                    # It's a file
+                    root_files.append(format(path))
+                elif stat == 0:
+                    logger.warning('Path %s does not exist locally or remotely', path)
+            except RuntimeError:
+                logger.warning(
+                    'Path %s does not exist locally and could not be treated as a remote path',
+                    path
+                    )
     root_files.sort()
     return root_files
