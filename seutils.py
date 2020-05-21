@@ -337,3 +337,39 @@ def hadd(src, dst):
         else:
             # Something else went wrong while trying to run `hadd`
             raise
+
+
+# _______________________________________________________
+# Command line helpers
+
+MGM_ENV_KEY = 'SEU_DEFAULT_MGM'
+
+def cli_update_default_mgm(mgm):
+    if MGM_ENV_KEY in os.environ:
+        logger.warning(
+            'Setting default mgm to %s (previously: %s)',
+            mgm, os.environ[MGM_ENV_KEY]
+            )
+    else:
+        logger.warning('Setting default mgm to %s', mgm)
+    os.environ[MGM_ENV_KEY] = mgm
+
+def cli_detect_fnal():
+    mgm = None
+    if os.uname()[1].endswith('.fnal.gov'):
+        mgm = 'root://cmseos.fnal.gov'
+        logger.warning('Detected fnal.gov host; using mgm %s', mgm)
+    return mgm
+
+def cli_flexible_format(lfn, mgm=None):
+    if not lfn.startswith('root:') and not lfn.startswith('/'):
+        try:
+            prefix = '/store/user/' + os.environ['USER']
+            logger.warning('Pre-fixing %s', prefix)
+            lfn = os.path.join(prefix, lfn)
+        except KeyError:
+            pass
+    if lfn.startswith('root:'):
+        return format(lfn)
+    else:
+        return format(lfn, mgm)
