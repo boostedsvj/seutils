@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import seutils
+import argparse, os, sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import seutils_binutils
+parser = argparse.ArgumentParser()
+parser.add_argument('lfns', type=str, nargs='*', help='LFNs to be formatted')
+parser.add_argument('-m', '--mgm', type=str, help='MGM to be used')
+parser.add_argument('-u', '--update', action='store_true', help='Set the passed mgm to be the default')
+args = parser.parse_args()
+
+def main():
+    mgm = args.mgm if args.mgm else None
+    if mgm and args.update:
+        seutils_binutils,update_default_mgm(mgm)
+
+    if not args.mgm:
+        mgm_fnal = seutils_binutils.detect_fnal()
+        if mgm_fnal: mgm = mgm_fnal
+
+    if not args.lfns: args.lfns = ['']
+
+    for lfn in args.lfns:
+        lfn = seutils_binutils.flexible_format(lfn, mgm)
+        print('\n'.join(seutils.ls(lfn)))
+
+if __name__ == '__main__':
+    main()
