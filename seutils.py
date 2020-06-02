@@ -320,7 +320,7 @@ def ls_root(paths):
     return root_files
 
 
-def hadd(src, dst):
+def hadd(src, dst, dry=False):
     """
     Calls `ls_root` on `src` in order to be able to pass directories, then hadds.
     Needs ROOT env to be callable.
@@ -329,15 +329,17 @@ def hadd(src, dst):
     if not len(root_files):
         raise RuntimeError('src {0} yielded 0 root files'.format(src))
     cmd = ['hadd', dst] + root_files
-    try:
-        run_command(cmd)
-    except OSError as e:
-        if e.errno == 2:
-            logger.error('It looks like hadd is not on the path.')
-        else:
-            # Something else went wrong while trying to run `hadd`
-            raise
-
+    if dry:
+        print(cmd)
+    else:
+        try:
+            run_command(cmd)
+        except OSError as e:
+            if e.errno == 2:
+                logger.error('It looks like hadd is not on the path.')
+            else:
+                # Something else went wrong while trying to run `hadd`
+                raise
 
 # _______________________________________________________
 # Command line helpers
