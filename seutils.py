@@ -2,6 +2,8 @@
 import os.path as osp
 import logging, subprocess, os, glob, shutil
 
+DEFAULT_LOGGING_LEVEL = logging.WARNING
+
 def setup_logger(name='seutils'):
     if name in logging.Logger.manager.loggerDict:
         logger = logging.getLogger(name)
@@ -17,14 +19,14 @@ def setup_logger(name='seutils'):
         handler = logging.StreamHandler()
         handler.setFormatter(fmt)
         logger = logging.getLogger(name)
-        logger.setLevel(logging.WARNING)
+        logger.setLevel(DEFAULT_LOGGING_LEVEL)
         logger.addHandler(handler)
     return logger
 logger = setup_logger()
 
 def debug(flag=True):
     """Sets the logger level to debug (for True) or warning (for False)"""
-    logger.setLevel(logging.DEBUG if flag else logging.WARNING)
+    logger.setLevel(logging.DEBUG if flag else DEFAULT_LOGGING_LEVEL)
 
 def is_string(string):
     """
@@ -330,16 +332,19 @@ def hadd(src, dst, dry=False):
         raise RuntimeError('src {0} yielded 0 root files'.format(src))
     cmd = ['hadd', dst] + root_files
     if dry:
-        print(cmd)
-    else:
-        try:
-            run_command(cmd)
-        except OSError as e:
-            if e.errno == 2:
-                logger.error('It looks like hadd is not on the path.')
-            else:
-                # Something else went wrong while trying to run `hadd`
-                raise
+        logger.warning('hadd command: ' + ' '.join(cmd))
+        return
+    try:
+        debug(True)
+        run_command(cmd)
+    except OSError as e:
+        if e.errno == 2:
+            logger.error('It looks like hadd is not on the path.')
+        else:
+            # Something else went wrong while trying to run `hadd`
+            raise
+    finally:
+        debug(False)
 
 # _______________________________________________________
 # Command line helpers
