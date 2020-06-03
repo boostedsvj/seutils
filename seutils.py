@@ -330,7 +330,7 @@ def hadd(src, dst, dry=False):
     root_files = ls_root(src)
     if not len(root_files):
         raise RuntimeError('src {0} yielded 0 root files'.format(src))
-    cmd = ['hadd', dst] + root_files
+    cmd = ['hadd', '-f', dst] + root_files
     if dry:
         logger.warning('hadd command: ' + ' '.join(cmd))
         return
