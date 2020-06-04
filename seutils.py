@@ -321,7 +321,7 @@ def ls(path, stat=False, assume_directory=False):
     if assume_directory:
         status = 1
     else:
-        status = is_file_or_dir(path)
+        status = is_file_or_dir(format(path, mgm))
     # Depending on status, return formatted path to file, directory contents, or raise
     if status == 0:
         raise RuntimeError('Path \'{0}\' does not exist'.format(path))
