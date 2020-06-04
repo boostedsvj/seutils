@@ -80,6 +80,16 @@ def get_exitcode(cmd):
     logger.debug('Got exit code %s', process.returncode)
     return process.returncode
 
+def bytes_to_human_readable(num, suffix='B'):
+    """
+    Convert number of bytes to a human readable string
+    """
+    for unit in ['','k','M','G','T','P','E','Z']:
+        if abs(num) < 1024.0:
+            return '{0:3.1f} {1}b'.format(num, unit)
+        num /= 1024.0
+    return '{0:3.1f} {1}b'.format(num, 'Y')
+
 # _______________________________________________________
 # Path management
 
@@ -264,21 +274,136 @@ def cp_from_se(src, dst, create_parent_directory=True):
     """
     cp(format(src), dst)
 
-def ls(path):
+class Inode(object):
     """
-    Lists all files and directories in a directory on the se
+    Basic container of information returned by xrdfs MGM ls -l PATH:
+    permission string, modification time, size, and path
+    """
+    def __init__(self, statline, mgm=None):
+        components = statline.strip().split()
+        if not len(components) == 5:
+            raise RuntimeError(
+                'Expected 5 components for stat line:\n{0}'
+                .format(statline)
+                )
+        self.permissions = components[0]
+        self.isdir = self.permissions.startswith('d')
+        self.isfile = not(self.isdir)
+        import datetime
+        self.modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
+        self.size = components[3]
+        self.size_human = bytes_to_human_readable(float(self.size))
+        self.localpath = components[4]
+        if mgm:
+            self.mgm = mgm
+            self.path = format(self.localpath, mgm)
+
+    def __repr__(self):
+        if len(self.path) > 40:
+            shortpath = self.path[:10] + '...' + self.path[-15:]
+        else:
+            shortpath = self.path
+        return super(Inode, self).__repr__().replace('object', shortpath)
+
+def ls(path, stat=False, assume_directory=False):
+    """
+    Lists all files and directories in a directory on the SE.
+    It first checks whether the path exists and is a file or a directory.
+    If it does not exist, it raises an exception.
+    If it is a file, it just returns a formatted path to the file as a 1-element list
+    If it is a directory, it returns a list of the directory contents (formatted)
+
+    If stat is True, it returns Inode objects which contain more information beyond just the path
+    If assume_directory is True, the first check is not performed and the algorithm assumes
+    the user took care to pass a path to a directory.
     """
     mgm, path = split_mgm(path)
-    status = get_exitcode([ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ])
-    if status == 55:
+    if assume_directory:
+        status = 1
+    else:
+        status = is_file_or_dir(path)
+    # Depending on status, return formatted path to file, directory contents, or raise
+    if status == 0:
+        raise RuntimeError('Path \'{0}\' does not exist'.format(path))
+    elif status == 1:
+        # It's a directory; return contents
+        cmd = [ 'xrdfs', mgm, 'ls', path ]
+        if stat: cmd.append('-l')
+        output = run_command(cmd)
+        contents = []
+        for l in output:
+            l = l.strip()
+            if not len(l): continue
+            if stat:
+                contents.append(Inode(l, mgm))
+            else:
+                contents.append(format(l, mgm))
+        return contents
+    elif status == 2:
         # It's a file; just return the path to the file
         return [_join_mgm_lfn(mgm, path)]
-    elif status == 0:
-        # It's a directory; return contents
-        contents = run_command([ 'xrdfs', mgm, 'ls', path ])
-        return [ format(l.strip(), mgm=mgm) for l in contents if not len(l.strip()) == 0 ]
+
+MAX_RECURSION_DEPTH = 20
+
+class Counter:
+    """
+    Class to basically mimic a pointer to an int
+    This is very clumsy in python
+    """
+    def __init__(self):
+        self.i = 0
+    def plus_one(self):
+        self.i += 1
+
+def walk(path, stat=False):
+    """
+    Entry point for walk algorithm.
+    Performs a check whether the starting path is a directory,
+    then yields _walk.
+    A counter object is passed to count the number of requests
+    made to the storage element, so that 'accidents' are limited
+    """
+    path = format(path)
+    status = is_file_or_dir(path)
+    if not status == 1:
+        raise RuntimeError(
+            '{0} is not a directory'
+            .format(path)
+            )
+    counter = Counter()
+    for i in _walk(path, stat, counter):
+        yield i
+
+def _walk(path, stat, counter):
+    """
+    Recursively calls ls on traversed directories.
+    The yielded directories list can be modified in place
+    as in os.walk.
+    """
+    if counter.i >= MAX_RECURSION_DEPTH:
+        raise RuntimeError(
+            'walk reached the maximum recursion depth of {0} requests.'
+            ' If you are very sure that you really need this many requests,'
+            ' set seutils.MAX_RECURSION_DEPTH to a larger number.'
+            .format(MAX_RECURSION_DEPTH)
+            )
+    contents = ls(path, stat=True, assume_directory=True)
+    counter.plus_one()
+    files = [ c for c in contents if c.isfile ]
+    files.sort(key=lambda f: f.localpath)
+    directories = [ c for c in contents if c.isdir ]
+    directories.sort(key=lambda d: d.localpath)
+    if stat:
+        yield path, directories, files
     else:
-        raise RuntimeError('Path \'{0}\' does not exist'.format(path))
+        dirnames = [ d.path for d in directories ]
+        yield path, dirnames, [ f.path for f in files ]
+        # Filter directories again based on dirnames, in case the user modified
+        # dirnames after yield
+        directories = [ d for d in directories if d.path in dirnames ]
+    for directory in directories:
+        for i in _walk(directory.path, stat, counter):
+            yield i
 
 def ls_root(paths):
     """
@@ -321,6 +446,43 @@ def ls_root(paths):
     root_files.sort()
     return root_files
 
+def ls_wildcard(pattern, stat=False):
+    """
+    Like ls, but accepts wildcards * .
+
+    The algorithm is like `walk`, but discards directories that don't fit the pattern
+    early.
+    Still the number of requests can grow quickly; a limited number of wildcards is advised.
+    """
+    pattern = format(pattern)
+    if not '*' in pattern: return ls(pattern, stat=stat)
+    pattern_level = pattern.count('/')
+    logger.debug('Level is %s for path %s', pattern_level, pattern)
+    import re
+    # Get the base pattern before any wild cards
+    base = pattern.split('*',1)[0].rsplit('/',1)[0]
+    logger.debug('Found base pattern %s from pattern %s', base, pattern)
+    matches = []
+    for path, directories, files in walk(base, stat=stat):
+        level = path.count('/')
+        logger.debug('Level is %s for path %s', level, path)
+        trimmed_pattern = '/'.join(pattern.split('/')[:level+2]).replace('*', '.*')
+        logger.debug('Comparing directories in %s with pattern %s', path, trimmed_pattern)
+        regex = re.compile(trimmed_pattern)
+        if stat:
+            directories[:] = [ d for d in directories if regex.match(d.path) ]
+        else:
+            directories[:] = [ d for d in directories if regex.match(d) ]
+        if level+1 == pattern_level:
+            # Reached the depth of the pattern - save matches
+            matches.extend(directories[:])
+            if stat:
+                matches.extend([f for f in files if regex.match(f.path)])
+            else:
+                matches.extend([f for f in files if regex.match(f)])
+            # Stop iterating in this part of the tree
+            directories[:] = []
+    return matches
 
 def hadd(src, dst, dry=False):
     """
