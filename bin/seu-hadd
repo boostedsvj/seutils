@@ -15,6 +15,18 @@ parser.add_argument(
     '-d', '--dry', action='store_true',
     help='Prints formatted hadd command but does not execute'
     )
+parser.add_argument(
+    '-p', '--parallel', action='store_true',
+    help='Perform the hadd using intermittent chunks'
+    )
+parser.add_argument(
+    '-c', '--chunksize', default=200, type=int,
+    help='Perform the hadd using intermittent chunks of chunksize'
+    )
+parser.add_argument(
+    '-n', '--nthreads', default=6, type=int,
+    help='Perform the hadd using intermittent chunks with nthreads'
+    )
 parser.add_argument('-m', '--mgm', type=str, help='MGM to be used')
 args = parser.parse_args()
 
@@ -27,7 +39,10 @@ def main():
         seutils.cli_flexible_format(s, mgm) if (s.startswith('root:') or s.startswith('/store')) else s
         for s in args.src
         ]
-    seutils.hadd(src, args.out, dry=args.dry)
+    if args.parallel:
+        seutils.hadd_chunks(src, args.out, n_threads=args.nthreads, chunk_size=args.chunksize, dry=args.dry)
+    else:
+        seutils.hadd(src, args.out, dry=args.dry)
 
 if __name__ == '__main__':
     main()
