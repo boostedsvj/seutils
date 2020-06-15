@@ -250,29 +250,45 @@ def is_file_or_dir(path):
             .format(' '.join(cmd), status)
             )
 
-def cp(src, dst, create_parent_directory=True):
+def cp(src, dst, method='xrdcp', **kwargs):
     """
     Copies a file `src` to the storage element.
     Does not format `src` or `dst`; user is responsible for formatting.
     """
     logger.warning('Copying %s --> %s', src, dst)
-    if create_parent_directory:
-        cmd = [ 'xrdcp', '-s', '-p', src, dst ]
-    else:
-        cmd = [ 'xrdcp', '-s', src, dst ]
+    methods = {
+        'xrdcp' : _cp_xrdcp,
+        'gfal-copy' : _cp_gfal,
+        }
+    try:
+        methods[method](src, dst, **kwargs)
+    except KeyError:
+        logger.error('Method %s is not a valid copying method!', method)
+        raise
+
+def _cp_xrdcp(src, dst, create_parent_directory=True, verbose=True):
+    cmd = [ 'xrdcp', src, dst ]
+    if not verbose: cmd.insert(1, '-s')
+    if create_parent_directory: cmd.insert(1, '-p')
     run_command(cmd)
 
-def cp_to_se(src, dst, create_parent_directory=True):
+def _cp_gfal(src, dst, create_parent_directory=True, verbose=True):
+    cmd = [ 'gfal-copy', '-t', '180', src, dst ]
+    if create_parent_directory: cmd.insert(1, '-p')
+    if verbose: cmd.insert(1, '-v')
+    run_command(cmd)
+
+def cp_to_se(src, dst, **kwargs):
     """
     Like cp, but assumes dst is a location on a storage element and src is local
     """
-    cp(src, format(dst))
+    cp(src, format(dst), **kwargs)
 
-def cp_from_se(src, dst, create_parent_directory=True):
+def cp_from_se(src, dst, **kwargs):
     """
     Like cp, but assumes src is a location on a storage element and dst is local
     """
-    cp(format(src), dst)
+    cp(format(src), dst, **kwargs)
 
 class Inode(object):
     """
