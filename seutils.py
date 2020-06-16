@@ -295,24 +295,55 @@ class Inode(object):
     Basic container of information returned by xrdfs MGM ls -l PATH:
     permission string, modification time, size, and path
     """
-    def __init__(self, statline, mgm=None):
+
+    @classmethod
+    def from_path(cls, path, mgm=None):
+        import datetime
+        path = format(path, mgm) # Ensures consistency in input
+        mgm, path = split_mgm(path)
+        size = None
+        modtime = None
+        isdir = None
+        cmd = [ 'xrdfs', mgm, 'stat', path ]
+        output = run_command(cmd)
+        for l in output:
+            l = l.strip()
+            if l.startswith('Size:'):
+                size = int(l.split()[1])
+            elif l.startswith('MTime:'):
+                timestamp = l.replace('MTime:', '').strip()
+                modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            elif l.startswith('Flags:'):
+                isdir = 'IsDir' in l
+        if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
+        if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
+        if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
+        return cls(path, modtime, isdir, size)
+
+    @classmethod
+    def from_statline(cls, statline, mgm):
+        import datetime
         components = statline.strip().split()
         if not len(components) == 5:
             raise RuntimeError(
                 'Expected 5 components for stat line:\n{0}'
                 .format(statline)
                 )
-        self.permissions = components[0]
-        self.isdir = self.permissions.startswith('d')
+        isdir = components[0].startswith('d')
+        modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
+        size = int(components[3])
+        path = format(components[4], mgm)
+        return cls(path, modtime, isdir, size)
+
+    def __init__(self, path, modtime, isdir, size):
+        self.path = path
+        self.modtime = modtime
+        self.isdir = isdir
+        self.size = size
+        # Some derived properties
         self.isfile = not(self.isdir)
-        import datetime
-        self.modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
-        self.size = components[3]
         self.size_human = bytes_to_human_readable(float(self.size))
-        self.localpath = components[4]
-        if mgm:
-            self.mgm = mgm
-            self.path = format(self.localpath, mgm)
+        self.basename = osp.basename(path)
 
     def __repr__(self):
         if len(self.path) > 40:
@@ -321,7 +352,7 @@ class Inode(object):
             shortpath = self.path
         return super(Inode, self).__repr__().replace('object', shortpath)
 
-def ls(path, stat=False, assume_directory=False):
+def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
     """
     Lists all files and directories in a directory on the SE.
     It first checks whether the path exists and is a file or a directory.
@@ -330,8 +361,13 @@ def ls(path, stat=False, assume_directory=False):
     If it is a directory, it returns a list of the directory contents (formatted)
 
     If stat is True, it returns Inode objects which contain more information beyond just the path
+
     If assume_directory is True, the first check is not performed and the algorithm assumes
-    the user took care to pass a path to a directory.
+    the user took care to pass a path to a directory. This saves a request to the SE, which might
+    matter in the walk algorithm. For singular use, assume_directory should be set to False.
+
+    If no_expand_directory is True, the contents of the directory are not listed, and instead
+    a formatted path to the directory is returned (similar to unix's ls -d)
     """
     mgm, path = split_mgm(path)
     if assume_directory:
@@ -342,22 +378,27 @@ def ls(path, stat=False, assume_directory=False):
     if status == 0:
         raise RuntimeError('Path \'{0}\' does not exist'.format(path))
     elif status == 1:
-        # It's a directory; return contents
-        cmd = [ 'xrdfs', mgm, 'ls', path ]
-        if stat: cmd.append('-l')
-        output = run_command(cmd)
-        contents = []
-        for l in output:
-            l = l.strip()
-            if not len(l): continue
-            if stat:
-                contents.append(Inode(l, mgm))
-            else:
-                contents.append(format(l, mgm))
-        return contents
+        # It's a directory
+        if no_expand_directory:
+            # If not expanding, just return a formatted path to the directory
+            return [Inode.from_path(path, mgm)] if stat else [_join_mgm_lfn(mgm, path)]
+        else:
+            # List the contents of the directory
+            cmd = [ 'xrdfs', mgm, 'ls', path ]
+            if stat: cmd.append('-l')
+            output = run_command(cmd)
+            contents = []
+            for l in output:
+                l = l.strip()
+                if not len(l): continue
+                if stat:
+                    contents.append(Inode.from_statline(l, mgm))
+                else:
+                    contents.append(format(l, mgm))
+            return contents
     elif status == 2:
         # It's a file; just return the path to the file
-        return [_join_mgm_lfn(mgm, path)]
+        return [Inode.from_path(path, mgm)] if stat else [_join_mgm_lfn(mgm, path)]
 
 MAX_RECURSION_DEPTH = 20
 
@@ -406,9 +447,9 @@ def _walk(path, stat, counter):
     contents = ls(path, stat=True, assume_directory=True)
     counter.plus_one()
     files = [ c for c in contents if c.isfile ]
-    files.sort(key=lambda f: f.localpath)
+    files.sort(key=lambda f: f.basename)
     directories = [ c for c in contents if c.isdir ]
-    directories.sort(key=lambda d: d.localpath)
+    directories.sort(key=lambda d: d.basename)
     if stat:
         yield path, directories, files
     else:
@@ -465,13 +506,14 @@ def ls_root(paths):
 def ls_wildcard(pattern, stat=False):
     """
     Like ls, but accepts wildcards * .
+    Directories are *not* expanded.
 
     The algorithm is like `walk`, but discards directories that don't fit the pattern
     early.
     Still the number of requests can grow quickly; a limited number of wildcards is advised.
     """
     pattern = format(pattern)
-    if not '*' in pattern: return ls(pattern, stat=stat)
+    if not '*' in pattern: return ls(pattern, stat=stat, no_expand_directory=True)
     pattern_level = pattern.count('/')
     logger.debug('Level is %s for path %s', pattern_level, pattern)
     import re
