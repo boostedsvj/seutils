@@ -337,6 +337,12 @@ def stat(path, not_exist_ok=False):
     """
     return _stat_xrootd(path, not_exist_ok) if use_xrootd_path(path) else _stat_gfal(path, not_exist_ok)
 
+def stat_function(*args, **kwargs):
+    """
+    Alternative name for the stat function, since stat is also an often used keyword in functions
+    """
+    return stat(*args, **kwargs)
+
 def _stat_gfal(path, not_exist_ok=False):
     import datetime
     output = run_command(['gfal-stat', path], non_zero_exitcode_ok=not_exist_ok)
@@ -631,13 +637,13 @@ def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
         # It's a directory
         if no_expand_directory:
             # If not expanding, just return a formatted path to the directory
-            return [stat(path) if stat else path]
+            return [stat_function(path) if stat else path]
         else:
             # List the contents of the directory
             return listdir(path, assume_directory=True, stat=stat) # No need to re-check whether it's a directory
     elif status == 2:
         # It's a file; just return the path to the file
-        return [stat(path) if stat else path]
+        return [stat_function(path) if stat else path]
 
 class Counter:
     """
