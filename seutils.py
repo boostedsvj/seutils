@@ -112,52 +112,85 @@ def get_default_mgm():
             )
     return DEFAULT_MGM
 
-def _unsafe_split_mgm(filename):
+PROTOCOLS = [ 'root', 'srm', 'gsiftp', 'dcap' ] # Probably to be expanded
+
+def has_protocol(filename):
     """
-    Takes a properly formatted path starting with 'root:' and containing '/store'
+    Checks whether the filename contains a protocol.
+    Currently a very basic string check, which so far has been enough
     """
-    if not filename.startswith('root://'):
+    return ('://' in filename)
+
+def split_protocol_pfn(filename):
+    """
+    Splits protocol, server and logical file name from a physical file name.
+    Throws an exception of format-ensuring checks fail.
+    """
+    if not has_protocol(filename):
         raise ValueError(
-            'Cannot split mgm; passed filename: {0}'
+            'Attempted to get protocol from {0}, but there'
+            ' does not seem to be any.'
             .format(filename)
             )
-    elif not '/store' in filename:
+    protocol, rest = filename.split('://',1)
+    if not '//' in rest:
         raise ValueError(
-            'No substring \'/store\' in filename {0}'
+            'Could not determine server and logical file name from {0}'
             .format(filename)
             )
-    i = filename.index('/store')
-    mgm = filename[:i]
-    lfn = filename[i:]
-    return mgm, lfn
+    server, lfn = rest.split('//',1)
+    lfn = '/' + lfn # Restore the opening slash that was dropped in the split
+    return protocol, server, lfn
+
+def _split_mgm_pfn(filename):
+    """
+    Splits mgm and logical file name from a physical file name.
+    Throws an exception of format-ensuring checks fail.
+    """
+    protocol, server, lfn = split_protocol_pfn(filename)
+    return protocol + '://' + server, lfn
+
+def _join_protocol_server_lfn(protocol, server, lfn):
+    """
+    Joins protocol, server and lfn into a physical filename.
+    Ensures formatting to some extent.
+    """
+    protocol = protocol.replace(':', '') # Remove any ':' from the protocol
+    server = server.strip('/') # Strip trailing or opening slashes
+    if not lfn.startswith('/'):
+        raise ValueError(
+            'Logical file name {0} does not seem to be formatted correctly'
+            .format(lfn)
+            )
+    return protocol + '://' + server + '/' + lfn
 
 def split_mgm(path, mgm=None):
     """
     Returns the mgm and lfn that the user most likely intended to
-    if path starts with 'root://', the mgm is taken from the path
+    if path has a protocol string (e.g. 'root://...'), the mgm is taken from the path
     if mgm is passed, it is used as is
     if mgm is passed AND the path starts with 'root://' AND the mgm's don't agree,
       an exception is thrown
     if mgm is None and path has no mgm, the default variable DEFAULT_MGM is taken
     """
-    if path.startswith('root://'):
-        _mgm, lfn = _unsafe_split_mgm(path)
-        if not(mgm is None) and not _mgm == mgm:
+    if has_protocol(path):
+        mgm_from_path, lfn = _split_mgm_pfn(path)
+        if not(mgm is None) and not mgm_from_path == mgm:
             raise ValueError(
                 'Conflicting mgms determined from path and passed argument: '
                 'From path {0}: {1}, from argument: {2}'
-                .format(path, _mgm, mgm)
+                .format(path, mgm_from_path, mgm)
                 )
-        mgm = _mgm
+        mgm = mgm_from_path
     elif mgm is None:
         mgm = get_default_mgm()
         lfn = path
     else:
         lfn = path
     # Sanity check
-    if not lfn.startswith('/store'):
+    if not lfn.startswith('/'):
         raise ValueError(
-            'LFN {0} does not start with \'/store\'; something is wrong'
+            'LFN {0} does not start with \'/\'; something is wrong'
             .format(lfn)
             )
     return mgm, lfn
@@ -165,11 +198,11 @@ def split_mgm(path, mgm=None):
 def _join_mgm_lfn(mgm, lfn):
     """
     Joins mgm and lfn, ensures correct formatting.
-    Will throw an exception of the lfn does not start with '/store'
+    Will throw an exception of the lfn does not start with '/'
     """
-    if not lfn.startswith('/store'):
+    if not lfn.startswith('/'):
         raise ValueError(
-            'This function expects filenames that start with \'/store\''
+            'This function expects filenames that start with \'/\''
             )
     if not mgm.endswith('/'): mgm += '/'
     return mgm + lfn
@@ -179,12 +212,19 @@ def format(path, mgm=None):
     Formats a path to ensure it is a path on the SE.
     Can take:
     - Just path starting with 'root:' - nothing really happens
-    - Just path starting with '/store' - the default mgm is used
+    - Just path starting with '/' - the default mgm is used
     - Path starting with 'root:' and an mgm - an exception is thrown in case of conflict
-    - Path starting with '/store' and an mgm - mgm and path are joined
+    - Path starting with '/' and an mgm - mgm and path are joined
     """
     mgm, lfn = split_mgm(path, mgm=mgm)
     return _join_mgm_lfn(mgm, lfn)
+
+def get_protocol(path, mgm=None):
+    """
+    Returns the protocol contained in the path string
+    """
+    path = format(path, mgm)
+    return path.split('://')[0]
 
 # _______________________________________________________
 # Interactions with SE
@@ -250,16 +290,36 @@ def is_file_or_dir(path):
             .format(' '.join(cmd), status)
             )
 
-def cp(src, dst, method='xrdcp', **kwargs):
+def cp(src, dst, method='auto', **kwargs):
     """
     Copies a file `src` to the storage element.
     Does not format `src` or `dst`; user is responsible for formatting.
+
+    The method can be 'auto', 'xrdcp', or 'gfal-copy'. If 'auto', a heuristic
+    will be applied to determine whether to best use xrdcp or gfal-copy.
     """
     logger.warning('Copying %s --> %s', src, dst)
     methods = {
         'xrdcp' : _cp_xrdcp,
         'gfal-copy' : _cp_gfal,
         }
+    # Heuristic to determine what copy method to use
+    if method == 'auto':
+        for file in [src, dst]:
+            if has_protocol(file):
+                protocol = get_protocol(file)
+                if protocol == 'root':
+                    method = 'xrdcp'
+                else:
+                    method = 'gfal-copy'
+                break
+        else:
+            logger.debug(
+                'No protocols specified in either src ({0}) or dst ({1}); using xrdcp'
+                .format(src, dst)
+                )
+            method = 'xrdcp'
+    # Execute the copy method
     try:
         methods[method](src, dst, **kwargs)
     except KeyError:
@@ -659,14 +719,14 @@ def cli_detect_fnal():
     return mgm
 
 def cli_flexible_format(lfn, mgm=None):
-    if not lfn.startswith('root:') and not lfn.startswith('/'):
+    if has_protocol(lfn) and not lfn.startswith('/'):
         try:
             prefix = '/store/user/' + os.environ['USER']
             logger.warning('Pre-fixing %s', prefix)
             lfn = os.path.join(prefix, lfn)
         except KeyError:
             pass
-    if lfn.startswith('root:'):
+    if has_protocol(lfn):
         return format(lfn)
     else:
         return format(lfn, mgm)
