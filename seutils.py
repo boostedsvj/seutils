@@ -39,9 +39,10 @@ def is_string(string):
         basestring = str
     return isinstance(string, basestring)
 
-def run_command(cmd, dry=False):
+def run_command(cmd, dry=False, non_zero_exitcode_ok=False):
     """
-    Runs a command and captures output. Raises an exception on non-zero exit code.
+    Runs a command and captures output. Raises an exception on non-zero exit code,
+    except if non_zero_exitcode_ok is set to True.
     """
     logger.info('Issuing command: {0}'.format(' '.join(cmd)))
     if dry: return
@@ -63,9 +64,13 @@ def run_command(cmd, dry=False):
     if returncode == 0:
         logger.info('Command exited with status 0 - all good')
     else:
-        logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
-        logger.error('Output:\n%s', '\n'.join(output))
-        raise subprocess.CalledProcessError(cmd, returncode)
+        if non_zero_exitcode_ok:
+            logger.info('Command exited with status %s', return_code)
+            return returncode
+        else:
+            logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
+            logger.error('Output:\n%s', '\n'.join(output))
+            raise subprocess.CalledProcessError(cmd, returncode)
     return output
 
 def get_exitcode(cmd):
@@ -226,34 +231,212 @@ def get_protocol(path, mgm=None):
     path = format(path, mgm)
     return path.split('://')[0]
 
+def use_xrootd(protocol):
+    """
+    Based on the protocol, returns True if xrootd tools should be used, or gfal tools
+    """
+    # Not sure if this simple check will be enough in the futute
+    return (protocol == 'root')
+
+def use_xrootd_path(path):
+    """
+    Determines if xrootd should be used based on the passed path
+    """
+    return use_xrootd(get_protocol(path))
+
 # _______________________________________________________
 # Interactions with SE
+
+class Inode(object):
+    """
+    Basic container of information representing an inode on a
+    storage element: isdir/isfile, modification time, size, and path
+    """
+    @classmethod
+    def from_path(cls, path, mgm=None):
+        path = format(path, mgm)
+        return stat(path)
+
+    @classmethod
+    def from_statline_gfal(cls, statline, directory):
+        """
+        `gfal-ls -l` returns only basenames, so the directory from which the
+        statline originated is needed as an argument.
+        """
+        import datetime
+        components = statline.strip().split()
+        if not len(components) >= 9:
+            raise RuntimeError(
+                'Expected at least 9 components for stat line:\n{0}'
+                .format(statline)
+                )
+        try:
+            isdir = components[0].startswith('d')
+            timestamp = ' '.join(components[5:8])
+            modtime = datetime.datetime.strptime(timestamp, '%b %d %H:%M')
+            size = int(components[4])
+            path = osp.join(directory, components[8])
+            return cls(path, modtime, isdir, size)
+        except:
+            logger.error('Error parsing statline: %s', statline)
+            raise
+
+    @classmethod
+    def from_statline_xrootd(cls, statline, mgm):
+        import datetime
+        components = statline.strip().split()
+        if not len(components) == 5:
+            raise RuntimeError(
+                'Expected 5 components for stat line:\n{0}'
+                .format(statline)
+                )
+        isdir = components[0].startswith('d')
+        modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
+        size = int(components[3])
+        path = format(components[4], mgm)
+        return cls(path, modtime, isdir, size)
+
+    def __init__(self, path, modtime, isdir, size):
+        self.path = path
+        self.modtime = modtime
+        self.isdir = isdir
+        self.size = size
+        # Some derived properties
+        self.isfile = not(self.isdir)
+        self.size_human = bytes_to_human_readable(float(self.size))
+        self.basename = osp.basename(path)
+
+    def __repr__(self):
+        if len(self.path) > 40:
+            shortpath = self.path[:10] + '...' + self.path[-15:]
+        else:
+            shortpath = self.path
+        return super(Inode, self).__repr__().replace('object', shortpath)
 
 def mkdir(directory):
     """
     Creates a directory on the SE
     Does not check if directory already exists
     """
+    directory = format(directory) # Ensures format
+    logger.warning('Creating directory on SE: {0}'.format(directory))
+    _mkdir_xrootd(directory) if use_xrootd_path(directory) else _mkdir_gfal(directory)
+
+def _mkdir_gfal(directory):
+    run_command([ 'gfal-mkdir', '-p', directory ])
+
+def _mkdir_xrootd(directory):
     mgm, directory = split_mgm(directory)
-    logger.warning('Creating directory on SE: {0}'.format(_join_mgm_lfn(mgm, directory)))
-    cmd = [ 'xrdfs', mgm, 'mkdir', '-p', directory ]
-    run_command(cmd)
+    run_command([ 'xrdfs', mgm, 'mkdir', '-p', directory ])
+
+def stat(path, not_exist_ok=False):
+    """
+    Returns an Inode object for path.
+    If not_exist_ok is True and the path doesn't exist, it returns None
+    without raising an exception
+    """
+    return _stat_xrootd(path, not_exist_ok) if use_xrootd_path(path) else _stat_gfal(path, not_exist_ok)
+
+def _stat_gfal(path, not_exist_ok=False):
+    import datetime
+    output = run_command(['gfal-stat', path], non_zero_exitcode_ok=not_exist_ok)
+    if isinstance(output, int):
+        # The command failed; if output is 2 the path did not exist,
+        # which might be okay if not_exist_ok is True, but other codes
+        # should raise an exception
+        if not_exist_ok and output == 2:
+            logger.info('Stat %s: no such file', path)
+            return None
+        else:
+            raise RuntimeError(
+                'cmd {0} returned exit code {1}'
+                .format(' '.join(cmd), output)
+                )
+    # Interpret the output to create an Inode object
+    size = None
+    modtime = None
+    isdir = None
+    for line in output:
+        line = line.strip()
+        if len(line) == 0:
+            continue
+        elif line.startswith('Size:'):
+            isdir = ('directory' in line)
+            size = int(line.replace('Size:','').strip().split()[0])
+        elif line.startswith('Modify:'):
+            timestamp = line.replace('Modify:','').strip()
+            # Strip off microseconds if they're there
+            if '.' in timestamp: timestamp = timestamp.split('.')[0]
+            modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
+    if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
+    if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
+    return Inode(path, modtime, isdir, size)
+
+def _stat_xrootd(path, not_exist_ok=False):
+    import datetime
+    mgm, path = split_mgm(path)
+    cmd = [ 'xrdfs', mgm, 'stat', path ]
+    output = run_command(cmd, non_zero_exitcode_ok=not_exist_ok)
+    if isinstance(output, int):
+        # The command failed; if output is 54 the path did not exist,
+        # which might be okay if not_exist_ok is True, but other codes
+        # should raise an exception
+        if not_exist_ok and output == 54:
+            logger.info('Stat %s: no such file', path)
+            return None
+        else:
+            raise RuntimeError(
+                'cmd {0} returned exit code {1}'
+                .format(' '.join(cmd), output)
+                )
+    # Parse output to an Inode instance
+    size = None
+    modtime = None
+    isdir = None
+    for l in output:
+        l = l.strip()
+        if l.startswith('Size:'):
+            size = int(l.split()[1])
+        elif l.startswith('MTime:'):
+            timestamp = l.replace('MTime:', '').strip()
+            modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+        elif l.startswith('Flags:'):
+            isdir = 'IsDir' in l
+    if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
+    if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
+    if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
+    return Inode(path, modtime, isdir, size)
+
+def exists(path):
+    """
+    Returns a boolean indicating whether the path exists.
+    """
+    return _exists_xrootd(path) if use_xrootd_path(path) else _exists_gfal(path)
+
+def _exists_gfal(path):
+    return get_exitcode(['gfal-stat', path]) == 0
+
+def _exists_xrootd(path):
+    mgm, path = split_mgm(path)
+    cmd = [ 'xrdfs', mgm, 'stat', path ]
+    return get_exitcode(cmd) == 0
 
 def isdir(directory):
     """
     Returns a boolean indicating whether the directory exists.
     Also returns False if the passed path is a file.
     """
+    return _isdir_xrootd(directory) if use_xrootd_path(directory) else _isdir_gfal(directory)
+
+def _isdir_gfal(directory):
+    statinfo = _stat_gfal(directory, not_exist_ok=True)
+    if statinfo is None: return False
+    return statinfo.isdir
+
+def _isdir_xrootd(directory):
     mgm, directory = split_mgm(directory)
     cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', directory ]
-    return get_exitcode(cmd) == 0
-
-def exists(path):
-    """
-    Returns a boolean indicating whether the path exists.
-    """
-    mgm, path = split_mgm(path)
-    cmd = [ 'xrdfs', mgm, 'stat', path ]
     return get_exitcode(cmd) == 0
 
 def isfile(path):
@@ -261,10 +444,18 @@ def isfile(path):
     Returns a boolean indicating whether the file exists.
     Also returns False if the passed path is a directory.
     """
+    return _isfile_xrootd(path) if use_xrootd_path(path) else _isfile_gfal(path)
+
+def _isfile_xrootd(path):
     mgm, path = split_mgm(path)
     status = get_exitcode([ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ])
     # Error code 55 means path exists, but is not a directory
     return (status == 55)
+
+def _isfile_gfal(path):
+    statinfo = _stat_gfal(path, not_exist_ok=True)
+    if statinfo is None: return False
+    return statinfo.isfile
 
 def is_file_or_dir(path):
     """
@@ -272,6 +463,18 @@ def is_file_or_dir(path):
     Returns 1 if it's a directory
     Returns 2 if it's a file
     """
+    return _is_file_or_dir_xrootd(path) if use_xrootd_path(path) else _is_file_or_dir_gfal(path)
+
+def _is_file_or_dir_gfal(path):
+    statinfo = _stat_gfal(path, not_exist_ok=True)
+    if statinfo is None:
+        return 0
+    elif statinfo.isdir:
+        return 1
+    elif statinfo.isfile:
+        return 2
+
+def _is_file_or_dir_xrootd(path):
     mgm, path = split_mgm(path)
     cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
     status = get_exitcode(cmd)
@@ -290,6 +493,49 @@ def is_file_or_dir(path):
             .format(' '.join(cmd), status)
             )
 
+def listdir(directory, stat=False, assume_directory=False):
+    """
+    Returns the contents of a directory
+    If 'assume_directory' is True, it is assumed the user took
+    care to pass a path to a valid directory, and no check is performed
+    """
+    if not assume_directory:
+        if not isdir(directory):
+            raise RuntimeError(
+                '{0} is not a valid directory'
+                .format(directory)
+                )
+    return _listdir_xrootd(directory, stat) if use_xrootd_path(directory) else _listdir_gfal(directory, stat)
+
+def _listdir_xrootd(directory, stat=False):
+    mgm, path = split_mgm(directory)
+    cmd = [ 'xrdfs', mgm, 'ls', path ]
+    if stat: cmd.append('-l')
+    output = run_command(cmd)
+    contents = []
+    for l in output:
+        l = l.strip()
+        if not len(l): continue
+        if stat:
+            contents.append(Inode.from_statline_xrootd(l, mgm))
+        else:
+            contents.append(format(l, mgm))
+    return contents
+
+def _listdir_gfal(directory, stat=False):
+    cmd = [ 'gfal-ls', format(directory) ]
+    if stat: cmd.append('-l')
+    output = run_command(cmd)
+    contents = []
+    for l in output:
+        l = l.strip()
+        if not len(l): continue
+        if stat:
+            contents.append(Inode.from_statline_gfal(l, directory))
+        else:
+            contents.append(format(osp.join(directory, l)))
+    return contents
+
 def cp(src, dst, method='auto', **kwargs):
     """
     Copies a file `src` to the storage element.
@@ -307,8 +553,7 @@ def cp(src, dst, method='auto', **kwargs):
     if method == 'auto':
         for file in [src, dst]:
             if has_protocol(file):
-                protocol = get_protocol(file)
-                if protocol == 'root':
+                if use_xrootd_path(file):
                     method = 'xrdcp'
                 else:
                     method = 'gfal-copy'
@@ -350,67 +595,11 @@ def cp_from_se(src, dst, **kwargs):
     """
     cp(format(src), dst, **kwargs)
 
-class Inode(object):
-    """
-    Basic container of information returned by xrdfs MGM ls -l PATH:
-    permission string, modification time, size, and path
-    """
 
-    @classmethod
-    def from_path(cls, path, mgm=None):
-        import datetime
-        path = format(path, mgm) # Ensures consistency in input
-        mgm, path = split_mgm(path)
-        size = None
-        modtime = None
-        isdir = None
-        cmd = [ 'xrdfs', mgm, 'stat', path ]
-        output = run_command(cmd)
-        for l in output:
-            l = l.strip()
-            if l.startswith('Size:'):
-                size = int(l.split()[1])
-            elif l.startswith('MTime:'):
-                timestamp = l.replace('MTime:', '').strip()
-                modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-            elif l.startswith('Flags:'):
-                isdir = 'IsDir' in l
-        if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
-        if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
-        if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
-        return cls(path, modtime, isdir, size)
+# _______________________________________________________
+# Algorithms that use the SE interactions
 
-    @classmethod
-    def from_statline(cls, statline, mgm):
-        import datetime
-        components = statline.strip().split()
-        if not len(components) == 5:
-            raise RuntimeError(
-                'Expected 5 components for stat line:\n{0}'
-                .format(statline)
-                )
-        isdir = components[0].startswith('d')
-        modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
-        size = int(components[3])
-        path = format(components[4], mgm)
-        return cls(path, modtime, isdir, size)
-
-    def __init__(self, path, modtime, isdir, size):
-        self.path = path
-        self.modtime = modtime
-        self.isdir = isdir
-        self.size = size
-        # Some derived properties
-        self.isfile = not(self.isdir)
-        self.size_human = bytes_to_human_readable(float(self.size))
-        self.basename = osp.basename(path)
-
-    def __repr__(self):
-        if len(self.path) > 40:
-            shortpath = self.path[:10] + '...' + self.path[-15:]
-        else:
-            shortpath = self.path
-        return super(Inode, self).__repr__().replace('object', shortpath)
+MAX_RECURSION_DEPTH = 20
 
 def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
     """
@@ -429,11 +618,12 @@ def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
     If no_expand_directory is True, the contents of the directory are not listed, and instead
     a formatted path to the directory is returned (similar to unix's ls -d)
     """
-    mgm, path = split_mgm(path)
+    path = format(path)
+    protocol = get_protocol(path)
     if assume_directory:
         status = 1
     else:
-        status = is_file_or_dir(format(path, mgm))
+        status = is_file_or_dir(path)
     # Depending on status, return formatted path to file, directory contents, or raise
     if status == 0:
         raise RuntimeError('Path \'{0}\' does not exist'.format(path))
@@ -441,26 +631,13 @@ def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
         # It's a directory
         if no_expand_directory:
             # If not expanding, just return a formatted path to the directory
-            return [Inode.from_path(path, mgm)] if stat else [_join_mgm_lfn(mgm, path)]
+            return [stat(path) if stat else path]
         else:
             # List the contents of the directory
-            cmd = [ 'xrdfs', mgm, 'ls', path ]
-            if stat: cmd.append('-l')
-            output = run_command(cmd)
-            contents = []
-            for l in output:
-                l = l.strip()
-                if not len(l): continue
-                if stat:
-                    contents.append(Inode.from_statline(l, mgm))
-                else:
-                    contents.append(format(l, mgm))
-            return contents
+            return listdir(path, assume_directory=True, stat=stat) # No need to re-check whether it's a directory
     elif status == 2:
         # It's a file; just return the path to the file
-        return [Inode.from_path(path, mgm)] if stat else [_join_mgm_lfn(mgm, path)]
-
-MAX_RECURSION_DEPTH = 20
+        return [stat(path) if stat else path]
 
 class Counter:
     """
@@ -602,6 +779,10 @@ def ls_wildcard(pattern, stat=False):
             directories[:] = []
     return matches
 
+
+# _______________________________________________________
+# hadd utilities
+
 def _hadd(root_files, dst, dry=False):
     """
     Compiles and runs the hadd command
@@ -715,11 +896,11 @@ def cli_detect_fnal():
     mgm = None
     if os.uname()[1].endswith('.fnal.gov'):
         mgm = 'root://cmseos.fnal.gov'
-        logger.warning('Detected fnal.gov host; using mgm %s', mgm)
+        logger.warning('Detected fnal.gov host; using mgm %s as default if necessary', mgm)
     return mgm
 
 def cli_flexible_format(lfn, mgm=None):
-    if has_protocol(lfn) and not lfn.startswith('/'):
+    if not has_protocol(lfn) and not lfn.startswith('/'):
         try:
             prefix = '/store/user/' + os.environ['USER']
             logger.warning('Pre-fixing %s', prefix)
