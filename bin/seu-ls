@@ -21,7 +21,7 @@ def main():
 
     for lfn in args.lfns:
         lfn = seutils.cli_flexible_format(lfn, mgm)
-        print('\n'.join(seutils.ls(lfn)))
+        print('\n'.join(seutils.ls_wildcard(lfn)))
 
 if __name__ == '__main__':
     main()
