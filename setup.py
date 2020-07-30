@@ -4,13 +4,13 @@ from setuptools import setup
 
 setup(
     name          = 'seutils',
-    version       = '0.17',
+    version       = '0.18',
     license       = 'BSD 3-Clause License',
     description   = 'Description text',
     url           = 'https://github.com/tklijnsma/seutils.git',
     author        = 'Thomas Klijnsma',
     author_email  = 'tklijnsm@gmail.com',
-    py_modules    = ['seutils'],
+    packages      = ['seutils'],
     zip_safe      = False,
     scripts       = ['bin/seu-format', 'bin/seu-ls', 'bin/seu-hadd', 'bin/seu-du'],
     )

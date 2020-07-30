@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
 import os.path as osp
 import logging, subprocess, os, glob, shutil
 
@@ -785,104 +786,6 @@ def ls_wildcard(pattern, stat=False):
             directories[:] = []
     return matches
 
-
-# _______________________________________________________
-# hadd utilities
-
-def _hadd(root_files, dst, dry=False):
-    """
-    Compiles and runs the hadd command
-    """
-    cmd = ['hadd', '-f', dst] + root_files
-    if dry:
-        logger.warning('hadd command: ' + ' '.join(cmd))
-        return
-    try:
-        debug(True)
-        run_command(cmd)
-    except OSError as e:
-        if e.errno == 2:
-            logger.error('It looks like hadd is not on the path.')
-        else:
-            # Something else went wrong while trying to run `hadd`
-            raise
-    finally:
-        debug(False)
-
-def _hadd_packed(tup):
-    """
-    Just unpacks an input tuple and calls _hadd.
-    Needed to work with multiprocessing.
-    """
-    return _hadd(*tup)
-
-def hadd(src, dst, dry=False):
-    """
-    Calls `ls_root` on `src` in order to be able to pass directories, then hadds.
-    Needs ROOT env to be callable.
-    """
-    root_files = ls_root(src)
-    if not len(root_files):
-        raise RuntimeError('src {0} yielded 0 root files'.format(src))
-    _hadd(root_files, dst, dry=dry)
-
-def hadd_chunks(src, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dry=False):
-    """
-    Calls `ls_root` on `src` in order to be able to pass directories, then hadds.
-    Needs ROOT env to be callable.
-    """
-    root_files = ls_root(src)
-    if not len(root_files):
-        raise RuntimeError('src {0} yielded 0 root files'.format(src))
-    _hadd_chunks(root_files, dst, n_threads, chunk_size, tmpdir, dry)
-
-def _hadd_chunks(root_files, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dry=False):
-    """
-    Like hadd, but hadds a chunk of root files in threads to temporary files first,
-    then hadds the temporary files into the final root file.
-    The algorithm is recursive; if there are too many temporary files still, another intermediate
-    chunked hadd is performed.
-    """
-    if not len(root_files):
-        raise RuntimeError('src {0} yielded 0 root files'.format(src))
-    elif len(root_files) < chunk_size:
-        # No need for chunking. This should also be the final step of the recursion
-        _hadd(root_files, dst, dry=dry)
-        return
-
-    import math, uuid, shutil, multiprocessing as mp
-    n_chunks = int(math.ceil(len(root_files) / float(chunk_size)))
-
-    # Make a unique directory for temporary files
-    tmpdir = osp.join(tmpdir, 'tmphadd', str(uuid.uuid4()))
-    os.makedirs(tmpdir)
-
-    try:
-        debug(True)
-        chunk_rootfiles = []
-        # First compile list of function arguments
-        func_args = []
-        for i_chunk in range(n_chunks):
-            chunk = root_files[ i_chunk*chunk_size : (i_chunk+1)*chunk_size ]
-            chunk_dst = osp.join(tmpdir, 'chunk{0}.root'.format(i_chunk))
-            func_args.append([chunk, chunk_dst, dry])
-            chunk_rootfiles.append(chunk_dst)
-            if dry: logger.debug('hadding %s --> %s', ' '.join(chunk), chunk_dst)
-        # Submit to multiprocessing in one go:
-        if not dry:
-            p = mp.Pool(n_threads)
-            p.map(_hadd_packed, func_args)
-            p.close()
-            p.join()
-        # Merge the chunks into the final destination, potentially with another chunked merge
-        _hadd_chunks(chunk_rootfiles, dst, n_threads, chunk_size, tmpdir, dry)
-
-    finally:
-        logger.warning('Removing %s', tmpdir)
-        shutil.rmtree(tmpdir)
-        debug(False)
-
-
 # _______________________________________________________
 # Command line helpers
 
@@ -917,3 +820,8 @@ def cli_flexible_format(lfn, mgm=None):
         return format(lfn)
     else:
         return format(lfn, mgm)
+
+# _______________________________________________________
+# root utils extension
+
+from . import rootutils as root
