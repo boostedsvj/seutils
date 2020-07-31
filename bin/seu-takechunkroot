@@ -1,0 +1,18 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import seutils
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('rootfile', type=str, help='Path to root file')
+parser.add_argument('-f', '--first', type=int, help='First event to use', required=True)
+parser.add_argument('-l', '--last', type=int, help='Last event to use', required=True)
+parser.add_argument('-t', '--tree', type=str, help='Name of the tree', default='auto')
+parser.add_argument('-d', '--dst', type=str, help='Output root file')
+args = parser.parse_args()
+
+def main():
+    dst = args.dst if args.dst else None
+    seutils.root.make_chunk_rootfile(args.rootfile, args.first, args.last, dst=dst, tree=args.tree)
+
+if __name__ == '__main__':
+    main()
