@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, glob, shutil
+import logging, subprocess, os, glob, shutil, math
 from contextlib import contextmanager
 
 import seutils
@@ -147,13 +147,13 @@ def nocache():
         CACHE_TREESINFILE = _saved_CACHE_TREESINFILE
 
 @contextmanager
-def open_root(rootfile):
+def open_root(rootfile, mode='read'):
     """
     Context manager to open a root file with pyroot
     """
     import ROOT
     logger.debug('Opening %s with pyroot', rootfile)
-    tfile = ROOT.TFile.Open(rootfile)
+    tfile = ROOT.TFile.Open(rootfile, mode)
     try:
         yield tfile
     finally:
@@ -179,7 +179,7 @@ def _iter_trees_recursively_root(node, prefix=''):
         if classname == 'TDirectoryFile':
             dirname = key.GetName()
             lower_node = node.Get(dirname)
-            for tree in iter_trees_recursively(lower_node, prefix=prefix+dirname+'/'):
+            for tree in _iter_trees_recursively_root(lower_node, prefix=prefix+dirname+'/'):
                 yield tree
         elif not classname == 'TTree':
             continue
@@ -256,11 +256,18 @@ def get_trees(node):
         CACHE_TREESINFILE.sync()
     return trees
 
+def get_most_likely_tree(node):
+    """
+    Returns get_trees, passed through a small filtering step
+    """
+    trees = get_trees(node)
+    return _select_most_likely_tree(trees)
+
 def _count_entries_root(tfile, tree='auto'):
     if tree == 'auto':
         trees = _get_trees_recursively_root(tfile)
         if len(trees) == 0:
-            logger.error('No TTrees found in %s', tfilename)
+            logger.error('No TTrees found in %s', tfile)
             return None
         tree = _select_most_likely_tree(trees)
     ttree = tfile.Get(tree)
@@ -296,3 +303,78 @@ def count_entries(rootfile, tree='auto'):
         CACHE_NENTRIES[rootfile + '___' + tree] = nentries
         CACHE_NENTRIES.sync()
     return nentries
+
+def split_rootfile(rootfile, dst='.', n_chunks=None, chunk_size=None, tree='auto'):
+    """
+    Splits a rootfile into new rootfiles.
+    Either n_chunks or chunk_size *must* be specified.
+    chunk_size is treated as number of events.
+    dst is treated as a directory, unless it contains a substring '%i',
+    in which case it is treated as a path to a file and %i is increased
+    per splitted part.
+    """
+    if n_chunks and chunk_size:
+        raise ValueError('Specify *either* n_chunks *or* chunk_size, not both')
+    # Root files will have to be opened for copying, so no point in using the cache
+    with nocache():
+        with open_root(rootfile) as src_tfile:
+            if tree == 'auto': tree = get_most_likely_tree(src_tfile)
+            src_tree = src_tfile.Get(tree)
+            nentries = src_tree.GetEntries()
+            # Some math to make sensible chunks
+            if not n_chunks: n_chunks = int(math.ceil(float(nentries) / chunk_size))
+            chunks = _get_chunkify_nentries(nentries, n_chunks)
+            logger.debug(
+                'Splitting %s into %s chunks (chunk_size ~%s)',
+                rootfile, n_chunks, chunks[0][1]-chunks[0][0]
+                )
+            for i, (first, last) in enumerate(chunks):
+                if '%i' in dst:
+                    dst_chunk = dst.replace('%i', str(i))
+                else:
+                    base, ext = osp.splitext(rootfile)
+                    dst_chunk = osp.join(dst, base + '_' + str(i) + ext)
+                logger.info('Splitting %s --> %s,%s %s', rootfile, first, last, dst_chunk)
+                # Perform actual copying
+                with open_root(dst_chunk, 'recreate') as dst_tfile:
+                    _take_chunk_of_rootfile(src_tree, dst_tfile, first, last)
+
+def make_chunk_rootfile(rootfile, first, last, dst=None, tree='auto'):
+    """
+    Makes a copy of the events in rootfile between first and last
+    in a new file dst.
+    """
+    if dst is None:
+        base, ext = osp.splitext(rootfile)
+        dst = '{base}_{first}-{last}{ext}'.format(
+            base=base, first=first, last=last, ext=ext
+            )
+    with nocache():
+        with open_root(rootfile) as src_tfile:
+            if tree == 'auto': tree = get_most_likely_tree(src_tfile)
+            src_tree = src_tfile.Get(tree)
+            logger.debug('Taking chunk %s-%s of %s into %s', first, last, rootfile, dst)
+            with open_root(dst, 'recreate') as dst_tfile:
+                _take_chunk_of_rootfile(src_tree, dst_tfile, first, last)
+
+def _take_chunk_of_rootfile(src_tree, dst_tfile, first, last):
+    """
+    Given a src TTree and a dst TFile, copies events between first
+    and last of src_tree into dst_tfile
+    """
+    n_copy = last - first + 1
+    dst_tfile.cd()
+    dst_tree = src_tree
+    dst_tree = dst_tree.CopyTree('', '', n_copy, first)
+    dst_tree.Write()
+
+def _get_chunkify_nentries(nentries, n_chunks):
+    """
+    Makes n_chunks chunks out of a nentries.
+    Chunk size may be variable sized if nentries is not divisable by n_chunks
+    May yield empty lists (i.e. first==last) if n_chunks > nentries.
+    Yields the first and last entry per chunk
+    """
+    chunk_size_float = float(nentries) / n_chunks
+    return [ (math.floor(i*chunk_size_float), math.floor((i+1)*chunk_size_float)-1) for i in range(n_chunks) ]
+

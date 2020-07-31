@@ -12,5 +12,8 @@ setup(
     author_email  = 'tklijnsm@gmail.com',
     packages      = ['seutils'],
     zip_safe      = False,
-    scripts       = ['bin/seu-format', 'bin/seu-ls', 'bin/seu-hadd', 'bin/seu-du'],
+    scripts       = [
+        'bin/seu-format', 'bin/seu-ls', 'bin/seu-hadd', 'bin/seu-du',
+        'bin/seu-nentries'
+        ],
     )

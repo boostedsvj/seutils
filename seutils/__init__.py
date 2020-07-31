@@ -40,6 +40,14 @@ def is_string(string):
         basestring = str
     return isinstance(string, basestring)
 
+def executable_exists(executable):
+    """
+    Takes a string that is the executable, and returns True if the executable
+    is one the path
+    """
+    import distutils.spawn
+    return not(distutils.spawn.find_executable(executable) is None)
+
 def run_command(cmd, dry=False, non_zero_exitcode_ok=False):
     """
     Runs a command and captures output. Raises an exception on non-zero exit code,
