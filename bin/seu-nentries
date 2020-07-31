@@ -1,0 +1,22 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import seutils
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('rootfiles', type=str, nargs='+', help='LFNs to be formatted')
+parser.add_argument('-t', '--tree', type=str, help='Name of the tree to count', default='auto')
+args = parser.parse_args()
+
+def main():
+    if len(args.rootfiles) == 1:
+        print(seutils.root.count_entries(args.rootfiles[0], args.tree))
+        return
+    n_total = 0
+    for rootfile in args.rootfiles:
+        n = seutils.root.count_entries(rootfile, args.tree)
+        print('{0:5} {1}'.format(rootfile, n))
+        if not n is None: n_total += n
+    print('Total: {0}'.format(n_total))
+
+if __name__ == '__main__':
+    main()
