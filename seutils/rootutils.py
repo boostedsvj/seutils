@@ -384,7 +384,7 @@ def _get_chunkify_nentries(nentries, n_chunks):
     chunk_size_float = float(nentries) / n_chunks
     return [ (math.floor(i*chunk_size_float), math.floor((i+1)*chunk_size_float)-1) for i in range(n_chunks) ]
 
-def _iter_chunk_entries(rootfiles, chunk_size):
+def iter_chunkify_rootfiles_by_entries(rootfiles, chunk_size):
     """
     Function that yields lists of (path.root, n_take, first, last), so that the number
     of events in a list is equal to chunk_size
@@ -425,7 +425,7 @@ def _iter_chunk_entries(rootfiles, chunk_size):
 
 def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto'):
     """
-    Takes a chunk as outputted from _iter_chunk_entries
+    Takes a chunk as outputted from iter_chunkify_rootfiles_by_entries
     (list of (rootfile, first, last)), and merges it into
     one rootfile at path dst
     """
