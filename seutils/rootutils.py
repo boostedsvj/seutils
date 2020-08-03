@@ -444,7 +444,7 @@ def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto
             dst=dst, tree=tree
             )            
     try:
-        tmpdir = 'merging-{0}'.format(uuid.uuid4())
+        tmpdir = osp.abspath('merging-{0}'.format(uuid.uuid4()))
         os.makedirs(tmpdir)
         # First created the splitted rootfiles
         splitted_rootfiles = []
