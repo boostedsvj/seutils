@@ -34,6 +34,15 @@ def _hadd(root_files, dst, dry=False):
     """
     Compiles and runs the hadd command
     """
+    if len(root_files) == 1:
+        # No need for hadding, just copy
+        rootfile = root_files[0]
+        logger.debug('Just 1 rootfile - copying %s --> %s', rootfile, dst)
+        if seutils.has_protocol(rootfile):
+            seutils.cp(rootfile, dst)
+        else:
+            shutil.copyfile(rootfile, dst)
+        return
     cmd = ['hadd', '-f', dst] + root_files
     if dry:
         logger.warning('hadd command: ' + ' '.join(cmd))
@@ -70,14 +79,11 @@ def _hadd_chunks(root_files, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dr
         # No need for chunking. This should also be the final step of the recursion
         _hadd(root_files, dst, dry=dry)
         return
-
     import multiprocessing as mp
     n_chunks = int(math.ceil(len(root_files) / float(chunk_size)))
-
     # Make a unique directory for temporary files
     tmpdir = osp.join(tmpdir, 'tmphadd', str(uuid.uuid4()))
     os.makedirs(tmpdir)
-
     try:
         debug(True)
         chunk_rootfiles = []
@@ -91,13 +97,13 @@ def _hadd_chunks(root_files, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dr
             if dry: logger.debug('hadding %s --> %s', ' '.join(chunk), chunk_dst)
         # Submit to multiprocessing in one go:
         if not dry:
+            n_threads = min(n_threads, len(n_chunks)) # Don't start more threads if not necessary
             p = mp.Pool(n_threads)
             p.map(_hadd_packed, func_args)
             p.close()
             p.join()
         # Merge the chunks into the final destination, potentially with another chunked merge
         _hadd_chunks(chunk_rootfiles, dst, n_threads, chunk_size, tmpdir, dry)
-
     finally:
         logger.warning('Removing %s', tmpdir)
         shutil.rmtree(tmpdir)
@@ -386,7 +392,7 @@ def _get_chunkify_nentries(nentries, n_chunks):
 
 def iter_chunkify_rootfiles_by_entries(rootfiles, chunk_size):
     """
-    Function that yields lists of (path.root, n_take, first, last), so that the number
+    Function that yields lists of (rootfile, first, last, is_whole_rootfile), so that the number
     of events in a list is equal to chunk_size
     """
     if not len(rootfiles): raise StopIteration
@@ -401,11 +407,12 @@ def iter_chunkify_rootfiles_by_entries(rootfiles, chunk_size):
     while True:
         n_take = min(n_still_needed, nentries)
         nentries -= n_take
+        is_whole_rootfile = (first == 0 and nentries == 0)
         logger.debug(
             'Taking %s entries from %s (%s - %s); %s remaining',
             n_take, rootfile, first, first+n_take-1, nentries
             )
-        chunk.append((rootfile, first, first+n_take-1))
+        chunk.append((rootfile, first, first+n_take-1, is_whole_rootfile))
         n_still_needed -= n_take
         first += n_take
         if n_still_needed == 0:
@@ -429,19 +436,44 @@ def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto
     (list of (rootfile, first, last)), and merges it into
     one rootfile at path dst
     """
-    tmpdir = 'merging-{0}'.format(uuid.uuid4())
-    os.makedirs(tmpdir)
+    if len(chunk) == 1:
+        # No need for the hadding step, just run the split directly to dst
+        rootfile, first, last, is_whole_rootfile = chunk[0]
+        file_split_fn(
+            rootfile, first, last,
+            dst=dst, tree=tree
+            )            
     try:
+        tmpdir = 'merging-{0}'.format(uuid.uuid4())
+        os.makedirs(tmpdir)
         # First created the splitted rootfiles
         splitted_rootfiles = []
-        for i, (rootfile, first, last) in enumerate(chunk):
-            splitted_rootfile = osp.join(tmpdir, 'part{}.root'.format(i))
-            file_split_fn(
-                rootfile, first, last,
-                dst=splitted_rootfile, tree=tree
-                )
-            splitted_rootfiles.append(splitted_rootfile)
+        for i, (rootfile, first, last, is_whole_rootfile) in enumerate(chunk):
+            if is_whole_rootfile:
+                # No need for splitting, just use the whole root file
+                if seutils.has_protocol(rootfile):
+                    splitted_rootfile = osp.join(tmpdir, 'part{}.root'.format(i))
+                    logger.debug(
+                        'rootfile %s is used entirely - copying to %s',
+                        rootfile, splitted_rootfile
+                        )
+                    seutils.cp(rootfile, splitted_rootfile)
+                    splitted_rootfiles.append(splitted_rootfile)
+                else:
+                    # If the file is local, don't even copy it
+                    logger.debug('local rootfile %s is used entirely - using it as is', rootfile)
+                    splitted_rootfiles.append(rootfile)
+            else:
+                splitted_rootfile = osp.join(tmpdir, 'part{}.root'.format(i))
+                file_split_fn(
+                    rootfile, first, last,
+                    dst=splitted_rootfile, tree=tree
+                    )
+                splitted_rootfiles.append(splitted_rootfile)
         # Hadd the splitted rootfiles
         hadd_chunks(splitted_rootfiles, dst, tmpdir=tmpdir)
     finally:
-        shutil.rmtree(tmpdir)
+        try:
+            shutil.rmtree(tmpdir)
+        except:
+            pass
