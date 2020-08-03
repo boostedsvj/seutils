@@ -765,10 +765,26 @@ def ls_wildcard(pattern, stat=False):
     Still the number of requests can grow quickly; a limited number of wildcards is advised.
     """
     pattern = format(pattern)
-    if not '*' in pattern: return ls(pattern, stat=stat, no_expand_directory=True)
+    if not '*' in pattern:
+        return ls(pattern, stat=stat, no_expand_directory=True)
+    import re
+    if not stat and not '*' in pattern.rsplit('/',1)[0]:
+        # If there is no star in any part but the last one and we don't need to stat, it is
+        # much faster to do a simple listing once and do regex matching here.
+        # This only saves time for the specific case of 'no need for stat' and 'pattern
+        # only for the very last part'
+        logger.info('Detected * only in very last part of pattern and stat=False; using shortcut')
+        directory, pattern = pattern.rsplit('/',1)
+        contents = ls(directory)
+        if pattern == '*':
+            # Skip the regex matching if set to 'match all'
+            return contents
+        regex = re.compile(pattern.replace('*', '.*'))
+        contents = [ c for c in contents if regex.match(osp.basename(c)) ]
+        return contents
+    # 
     pattern_level = pattern.count('/')
     logger.debug('Level is %s for path %s', pattern_level, pattern)
-    import re
     # Get the base pattern before any wild cards
     base = pattern.split('*',1)[0].rsplit('/',1)[0]
     logger.debug('Found base pattern %s from pattern %s', base, pattern)
