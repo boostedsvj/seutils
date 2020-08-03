@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, glob, shutil, math
+import logging, subprocess, os, glob, shutil, math, uuid
 from contextlib import contextmanager
 
 import seutils
@@ -12,20 +12,20 @@ from seutils import logger, debug, run_command, is_string
 
 def hadd(src, dst, dry=False):
     """
-    Calls `ls_root` on `src` in order to be able to pass directories, then hadds.
+    Calls `seutils.ls_root` on `src` in order to be able to pass directories, then hadds.
     Needs ROOT env to be callable.
     """
-    root_files = ls_root(src)
+    root_files = seutils.ls_root(src)
     if not len(root_files):
         raise RuntimeError('src {0} yielded 0 root files'.format(src))
     _hadd(root_files, dst, dry=dry)
 
 def hadd_chunks(src, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dry=False):
     """
-    Calls `ls_root` on `src` in order to be able to pass directories, then hadds.
+    Calls `seutils.ls_root` on `src` in order to be able to pass directories, then hadds.
     Needs ROOT env to be callable.
     """
-    root_files = ls_root(src)
+    root_files = seutils.ls_root(src)
     if not len(root_files):
         raise RuntimeError('src {0} yielded 0 root files'.format(src))
     _hadd_chunks(root_files, dst, n_threads, chunk_size, tmpdir, dry)
@@ -71,7 +71,7 @@ def _hadd_chunks(root_files, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dr
         _hadd(root_files, dst, dry=dry)
         return
 
-    import math, uuid, shutil, multiprocessing as mp
+    import multiprocessing as mp
     n_chunks = int(math.ceil(len(root_files) / float(chunk_size)))
 
     # Make a unique directory for temporary files
@@ -353,6 +353,12 @@ def make_chunk_rootfile(rootfile, first, last, dst=None, tree='auto'):
         with open_root(rootfile) as src_tfile:
             if tree == 'auto': tree = get_most_likely_tree(src_tfile)
             src_tree = src_tfile.Get(tree)
+            nentries = src_tree.GetEntries()
+            if last > nentries:
+                raise ValueError(
+                    'Requested last entry {} for {} has {} entries'
+                    .format(last, rootfile, nentries)
+                    )
             logger.debug('Taking chunk %s-%s of %s into %s', first, last, rootfile, dst)
             with open_root(dst, 'recreate') as dst_tfile:
                 _take_chunk_of_rootfile(src_tree, dst_tfile, first, last)
@@ -378,3 +384,64 @@ def _get_chunkify_nentries(nentries, n_chunks):
     chunk_size_float = float(nentries) / n_chunks
     return [ (math.floor(i*chunk_size_float), math.floor((i+1)*chunk_size_float)-1) for i in range(n_chunks) ]
 
+def _iter_chunk_entries(rootfiles, chunk_size):
+    """
+    Function that yields lists of (path.root, n_take, first, last), so that the number
+    of events in a list is equal to chunk_size
+    """
+    if not len(rootfiles): raise StopIteration
+    # Set up iterator for rootfiles and initialize
+    rootfilesiter = iter(rootfiles)
+    rootfile = next(rootfilesiter)
+    nentries = count_entries(rootfile)
+    first = 0
+    # Set up the chunk
+    chunk = []
+    n_still_needed = chunk_size
+    while True:
+        n_take = min(n_still_needed, nentries)
+        nentries -= n_take
+        logger.debug(
+            'Taking %s entries from %s (%s - %s); %s remaining',
+            n_take, rootfile, first, first+n_take-1, nentries
+            )
+        chunk.append((rootfile, first, first+n_take-1))
+        n_still_needed -= n_take
+        first += n_take
+        if n_still_needed == 0:
+            # Chunk is full, yield it and reset chunk and n_still_needed
+            yield chunk
+            chunk = []
+            n_still_needed = chunk_size
+        if nentries == 0:
+            # Try to get the next rootfile, yield remaining chunk if out of root files
+            try:
+                rootfile = next(rootfilesiter)
+                nentries = count_entries(rootfile)
+                first = 0
+            except StopIteration:
+                if chunk: yield chunk
+                break
+
+def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto'):
+    """
+    Takes a chunk as outputted from _iter_chunk_entries
+    (list of (rootfile, first, last)), and merges it into
+    one rootfile at path dst
+    """
+    tmpdir = 'merging-{0}'.format(uuid.uuid4())
+    os.makedirs(tmpdir)
+    try:
+        # First created the splitted rootfiles
+        splitted_rootfiles = []
+        for i, (rootfile, first, last) in enumerate(chunk):
+            splitted_rootfile = osp.join(tmpdir, 'part{}.root'.format(i))
+            file_split_fn(
+                rootfile, first, last,
+                dst=splitted_rootfile, tree=tree
+                )
+            splitted_rootfiles.append(splitted_rootfile)
+        # Hadd the splitted rootfiles
+        hadd_chunks(splitted_rootfiles, dst, tmpdir=tmpdir)
+    finally:
+        shutil.rmtree(tmpdir)
