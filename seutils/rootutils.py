@@ -199,7 +199,7 @@ def cache_to_file(dst='rootcache.tar.gz'):
         _return_dir = os.getcwd()
         os.chdir(CACHE_DIR)
         cmd = ['tar', '-zcvf', dst, '.']
-        qondor.utils.run_command(cmd)
+        seutils.run_command(cmd)
         return dst
     finally:
         os.chdir(_return_dir)
