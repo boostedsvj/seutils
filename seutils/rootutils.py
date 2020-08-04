@@ -546,12 +546,14 @@ def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto
                     splitted_rootfiles.append(rootfile)
             else:
                 splitted_rootfile = osp.join(tmpdir, 'part{}.root'.format(i))
+                logger.debug('Splitting %s --> (%s-%s) %s', rootfile, first, last, splitted_rootfile)
                 file_split_fn(
                     rootfile, first, last,
                     dst=splitted_rootfile, tree=tree
                     )
                 splitted_rootfiles.append(splitted_rootfile)
         # Hadd the splitted rootfiles
+        logger.debug('Now hadding splitted rootfiles to %s: %s', dst, splitted_rootfiles)
         hadd_chunks(splitted_rootfiles, dst, tmpdir=tmpdir)
     finally:
         try:
