@@ -178,7 +178,7 @@ def cache(cache_dir=None):
     _saved_CACHE_DIR = CACHE_DIR
     _saved_CACHE_NENTRIES = CACHE_NENTRIES
     _saved_CACHE_TREESINFILE = CACHE_TREESINFILE
-    use_cache(cache_dir)
+    use_cache(cache_dir=cache_dir)
     try:
         yield cache_dir
     finally:
