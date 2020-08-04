@@ -509,10 +509,21 @@ def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto
     if len(chunk) == 1:
         # No need for the hadding step, just run the split directly to dst
         rootfile, first, last, is_whole_rootfile = chunk[0]
-        file_split_fn(
-            rootfile, first, last,
-            dst=dst, tree=tree
-            )            
+        if is_whole_rootfile:
+            logger.info(
+                'Detected chunk %s is one *whole* file; Simply copying to %s directly',
+                chunk, dst
+                )
+            seutils.cp(rootfile, dst)
+        else:
+            logger.info(
+                'Detected chunk %s is one file; Splitting (%s-%s) to %s directly',
+                chunk, first, last, dst
+                )
+            file_split_fn(
+                rootfile, first, last,
+                dst=dst, tree=tree
+                )            
     try:
         tmpdir = osp.abspath('merging-{0}'.format(uuid.uuid4()))
         os.makedirs(tmpdir)
