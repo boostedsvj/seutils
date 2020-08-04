@@ -107,7 +107,7 @@ class FileCache(MutableMapping):
 
         if not app_cache_dir:
             # app_cache_dir = appdirs.user_cache_dir(appname, appname)
-            options = [ os.path.join(b, appname) for b in ['/tmp', '~/.fcache', '.']]
+            options = [ os.path.join(b, appname) for b in ['.fcache', '~/.fcache']]
             for option in options:
                 if os.path.exists(option):
                     break
