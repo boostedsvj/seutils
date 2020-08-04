@@ -122,7 +122,7 @@ class FileCache(MutableMapping):
                 else:
                     raise RuntimeError('Could not create any cache directory')
             app_cache_dir = option
-            self.app_cache_dir = app_cache_dir
+        self.app_cache_dir = app_cache_dir
 
         subcache_dir = os.path.join(app_cache_dir, *subcache)
         self.cache_dir = os.path.join(subcache_dir, 'cache')

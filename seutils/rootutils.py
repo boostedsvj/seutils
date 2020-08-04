@@ -210,11 +210,13 @@ def load_cache(cache_file, dst='.rootcache'):
     """
     dst = osp.abspath(dst)
     logger.info('Extracting %s --> %s', cache_file, dst)
+    if not osp.isdir(dst): os.makedirs(dst)
     cmd = [
         'tar', '-xvf', cache_file,
         '-C', dst
         ]
-    use_cache(cache_file)
+    seutils.run_command(cmd)
+    use_cache(cache_dir=dst)
 
 @contextmanager
 def open_root(rootfile, mode='read'):
@@ -269,6 +271,7 @@ def _get_trees_cache(rootfile):
     global USE_CACHE
     # Check if cache should be used and whether it exists
     if not USE_CACHE:
+        logger.debug('Not using cached trees: USE_CACHE==False')
         return None
     # If rootfile is TDirectory-like, use that
     try:
@@ -277,8 +280,9 @@ def _get_trees_cache(rootfile):
         pass
     if rootfile in CACHE_TREESINFILE:
         trees = CACHE_TREESINFILE[rootfile]
-        logger.info('Using cached result trees in %s: %s', rootfile, trees)
+        logger.info('Using cached trees in %s: %s', rootfile, trees)
         return trees
+    logger.debug('Not using cached trees: No cached result for %s', rootfile)
     return None        
 
 def _select_most_likely_tree(trees):
@@ -313,6 +317,7 @@ def get_trees(node):
     nodename = node if is_string(node) else node.GetPath()
     cached_result = _get_trees_cache(nodename)
     if cached_result:
+        logger.debug('Using cached trees %s', cached_result)
         return cached_result
     logger.debug('No cached result for %s', nodename)
     if is_string(node):
@@ -322,6 +327,7 @@ def get_trees(node):
         trees = _get_trees_recursively_root(node)
     # Update the cache
     if USE_CACHE:
+        logger.debug('Caching trees for %s: %s', nodename, trees)
         CACHE_TREESINFILE[nodename] = trees
         CACHE_TREESINFILE.sync()
     return trees
@@ -333,13 +339,7 @@ def get_most_likely_tree(node):
     trees = get_trees(node)
     return _select_most_likely_tree(trees)
 
-def _count_entries_root(tfile, tree='auto'):
-    if tree == 'auto':
-        trees = _get_trees_recursively_root(tfile)
-        if len(trees) == 0:
-            logger.error('No TTrees found in %s', tfile)
-            return None
-        tree = _select_most_likely_tree(trees)
+def _count_entries_root(tfile, tree):
     ttree = tfile.Get(tree)
     return ttree.GetEntries()
 
@@ -367,6 +367,12 @@ def count_entries(rootfile, tree='auto'):
         if nentries: return nentries
     # At least some part of the cached couldn't return, so open the root file
     with open_root(rootfile) as tfile:
+        if tree == 'auto':
+            trees = get_trees(rootfile)
+            if len(trees) == 0:
+                logger.error('No TTrees found in %s', tfile)
+                return None
+            tree = _select_most_likely_tree(trees)
         nentries = _count_entries_root(tfile, tree)
     # Cache the result
     if USE_CACHE:
