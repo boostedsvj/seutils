@@ -113,24 +113,32 @@ def _hadd_chunks(root_files, dst, n_threads=6, chunk_size=200, tmpdir='/tmp', dr
 # Root utilities
 
 USE_CACHE=False
+CACHE_DIR=None
 CACHE_NENTRIES=None
 CACHE_TREESINFILE=None
 
-def use_cache(flag=True):
+def use_cache(flag=True, cache_dir=None):
+    global CACHE_DIR
     global CACHE_NENTRIES
     global CACHE_TREESINFILE
     global USE_CACHE
     USE_CACHE = flag
+    CACHE_DIR = cache_dir
     if flag:
         from .cache import FileCache
-        if CACHE_NENTRIES is None:        
-            CACHE_NENTRIES = FileCache('seutils.nentries')
+        if CACHE_NENTRIES is None:
+            CACHE_NENTRIES = FileCache('seutils.nentries', app_cache_dir=cache_dir)
+            # Do save whatever the chosen default was
+            if CACHE_DIR is None: CACHE_DIR = CACHE_NENTRIES.app_cache_dir
         if CACHE_TREESINFILE is None:        
-            CACHE_TREESINFILE = FileCache('seutils.treesinfile')
+            CACHE_TREESINFILE = FileCache('seutils.treesinfile', app_cache_dir=cache_dir)
     else:
         USE_CACHE=False
         CACHE_NENTRIES=None
         CACHE_TREESINFILE=None
+        CACHE_DIR=None
+    logger.info('Activated cache using directory %s', CACHE_DIR)
+    return CACHE_DIR
 
 @contextmanager
 def nocache():
@@ -138,19 +146,75 @@ def nocache():
     Context manager to temporarily disable the cache
     """
     global USE_CACHE
+    global CACHE_DIR
     global CACHE_NENTRIES
     global CACHE_TREESINFILE
+    _saved_CACHE_DIR = CACHE_DIR
     _saved_CACHE_NENTRIES = CACHE_NENTRIES
     _saved_CACHE_TREESINFILE = CACHE_TREESINFILE
     USE_CACHE = False
+    CACHE_DIR = None
     CACHE_NENTRIES = None
     CACHE_TREESINFILE = None
     try:
         yield None
     finally:
         USE_CACHE = True
+        CACHE_DIR = _saved_CACHE_DIR
         CACHE_NENTRIES = _saved_CACHE_NENTRIES
         CACHE_TREESINFILE = _saved_CACHE_TREESINFILE
+
+@contextmanager
+def cache(cache_dir=None):
+    """
+    Context manager to temporarily enable the cache in some directory.
+    If cache_dir is None, some unique cache_dir is used
+    """
+    global USE_CACHE
+    global CACHE_DIR
+    global CACHE_NENTRIES
+    global CACHE_TREESINFILE
+    _saved_USE_CACHE = USE_CACHE
+    _saved_CACHE_DIR = CACHE_DIR
+    _saved_CACHE_NENTRIES = CACHE_NENTRIES
+    _saved_CACHE_TREESINFILE = CACHE_TREESINFILE
+    use_cache(cache_dir)
+    try:
+        yield cache_dir
+    finally:
+        USE_CACHE = _saved_USE_CACHE
+        CACHE_DIR = _saved_CACHE_DIR
+        CACHE_NENTRIES = _saved_CACHE_NENTRIES
+        CACHE_TREESINFILE = _saved_CACHE_TREESINFILE
+
+def cache_to_file(dst='rootcache.tar.gz'):
+    """
+    Dumps the cached requests to a file
+    """
+    if not USE_CACHE:
+        raise RuntimeError('No active cache to save to a file')
+    if not dst.endswith('.tar.gz'): dst += '.tar.gz'
+    dst = osp.abspath(dst)
+    try:
+        _return_dir = os.getcwd()
+        os.chdir(CACHE_DIR)
+        cmd = ['tar', '-zcvf', dst, '.']
+        qondor.utils.run_command(cmd)
+        return dst
+    finally:
+        os.chdir(_return_dir)
+
+def load_cache(cache_file, dst='.rootcache'):
+    """
+    Loads to use the cache from a .tar.gz file
+    """
+    dst = osp.abspath(dst)
+    logger.info('Extracting %s --> %s', cache_file, dst)
+    cmd = [
+        'tar', '-xvf', cache_file,
+        '-C', dst
+        ]
+    use_cache(cache_file)
 
 @contextmanager
 def open_root(rootfile, mode='read'):
