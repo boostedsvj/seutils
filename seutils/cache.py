@@ -232,7 +232,7 @@ class FileCache(MutableMapping):
         return bkey.decode(self._keyencoding) if self._serialize else bkey
 
     def _dumps(self, value):
-        return value if not self._serialize else pickle.dumps(value)
+        return value if not self._serialize else pickle.dumps(value, protocol=2)
 
     def _loads(self, value):
         return value if not self._serialize else pickle.loads(value)
