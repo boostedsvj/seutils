@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, glob, shutil
+import logging, subprocess, os, glob, shutil, time
+from contextlib import contextmanager
 
 DEFAULT_LOGGING_LEVEL = logging.WARNING
 
@@ -48,39 +49,49 @@ def executable_exists(executable):
     import distutils.spawn
     return not(distutils.spawn.find_executable(executable) is None)
 
-def run_command(cmd, dry=False, non_zero_exitcode_ok=False):
+N_SECONDS_SLEEP = 10
+
+def run_command(cmd, dry=False, non_zero_exitcode_ok=False, n_retries=0):
     """
     Runs a command and captures output. Raises an exception on non-zero exit code,
     except if non_zero_exitcode_ok is set to True.
     """
-    logger.info('Issuing command: {0}'.format(' '.join(cmd)))
-    if dry: return
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        )
-    # Start running command and capturing output
-    output = []
-    for stdout_line in iter(process.stdout.readline, ''):
-        logger.debug('CMD: ' + stdout_line.strip('\n'))
-        output.append(stdout_line)
-    process.stdout.close()
-    process.wait()
-    returncode = process.returncode
-    # Return output only if command succeeded
-    if returncode == 0:
-        logger.info('Command exited with status 0 - all good')
-    else:
-        if non_zero_exitcode_ok:
-            logger.info('Command exited with status %s', return_code)
-            return returncode
+    i_attempt = 0
+    while True:
+        logger.info('Issuing command (attempt %s: %s)', i_attempt, ' '.join(cmd))
+        if dry: return
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            )
+        # Start running command and capturing output
+        output = []
+        for stdout_line in iter(process.stdout.readline, ''):
+            logger.debug('CMD: ' + stdout_line.strip('\n'))
+            output.append(stdout_line)
+        process.stdout.close()
+        process.wait()
+        returncode = process.returncode
+        # Return output only if command succeeded
+        if returncode == 0:
+            logger.info('Command exited with status 0 - all good')
         else:
-            logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
-            logger.error('Output:\n%s', '\n'.join(output))
-            raise subprocess.CalledProcessError(cmd, returncode)
-    return output
+            if non_zero_exitcode_ok:
+                logger.info('Command exited with status %s', return_code)
+                return returncode
+            else:
+                logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
+                logger.error('Output:\n%s', '\n'.join(output))
+                if i_attempt < n_retries:
+                    i_attempt += 1
+                    logger.error('Retrying attempt %s/%s in %s seconds...', i_attempt, n_retries, N_SECONDS_SLEEP)
+                    time.sleep(N_SECONDS_SLEEP)
+                    continue
+                else:
+                    raise subprocess.CalledProcessError(cmd, returncode)
+        return output
 
 def get_exitcode(cmd):
     """
@@ -103,6 +114,7 @@ def bytes_to_human_readable(num, suffix='B'):
             return '{0:3.1f} {1}b'.format(num, unit)
         num /= 1024.0
     return '{0:3.1f} {1}b'.format(num, 'Y')
+
 
 # _______________________________________________________
 # Path management
@@ -551,6 +563,8 @@ def _listdir_gfal(directory, stat=False):
             contents.append(format(osp.join(directory, l)))
     return contents
 
+N_COPY_RETRIES = 0
+
 def cp(src, dst, method='auto', **kwargs):
     """
     Copies a file `src` to the storage element.
@@ -586,17 +600,17 @@ def cp(src, dst, method='auto', **kwargs):
         logger.error('Method %s is not a valid copying method!', method)
         raise
 
-def _cp_xrdcp(src, dst, create_parent_directory=True, verbose=True):
+def _cp_xrdcp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True):
     cmd = [ 'xrdcp', src, dst ]
     if not verbose: cmd.insert(1, '-s')
     if create_parent_directory: cmd.insert(1, '-p')
-    run_command(cmd)
+    run_command(cmd, n_retries=n_retries)
 
-def _cp_gfal(src, dst, create_parent_directory=True, verbose=True):
+def _cp_gfal(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True):
     cmd = [ 'gfal-copy', '-t', '180', src, dst ]
     if create_parent_directory: cmd.insert(1, '-p')
     if verbose: cmd.insert(1, '-v')
-    run_command(cmd)
+    run_command(cmd, n_retries=n_retries)
 
 def cp_to_se(src, dst, **kwargs):
     """
