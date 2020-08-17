@@ -219,22 +219,34 @@ def load_cache(cache_file, dst='.rootcache'):
     use_cache(cache_dir=dst)
 
 @contextmanager
-def open_root(rootfile, mode='read'):
+def open_root(rootfile, mode='read', accept_already_open=True):
     """
     Context manager to open a root file with pyroot
     """
+    close_afterwards = True
     import ROOT
-    logger.debug('Opening %s with pyroot', rootfile)
-    tfile = ROOT.TFile.Open(rootfile, mode)
+    if isinstance(rootfile, ROOT.TDirectoryFile):
+        if accept_already_open:
+            logging.debug('%s is already open', rootfile)
+            tfile = rootfile
+            close_afterwards = False
+        else:
+            raise ValueError(
+                'open_root received a ROOT.TDirectoryFile input instead of a path to a file'
+                )
+    else:
+        logger.debug('Opening %s with pyroot', rootfile)
+        tfile = ROOT.TFile.Open(rootfile, mode)
     try:
         yield tfile
     finally:
-        # Attempt to close, but closing can fail if nothing opened in the first place,
-        # so accept any exception.
-        try:
-            tfile.Close()
-        except:
-            pass
+        if close_afterwards:
+            # Attempt to close, but closing can fail if nothing opened in the first place,
+            # so accept any exception.
+            try:
+                tfile.Close()
+            except:
+                pass
 
 def _iter_trees_recursively_root(node, prefix=''):
     """
@@ -560,3 +572,66 @@ def hadd_chunk_entries(chunk, dst, file_split_fn=make_chunk_rootfile, tree='auto
             shutil.rmtree(tmpdir)
         except:
             pass
+
+
+def count_entries(rootfile, tree='auto'):
+    # Try to use the cache to resolve a potential auto tree early
+    if tree == 'auto' and USE_CACHE:
+        trees = _get_trees_cache(rootfile)
+        if trees: tree = _select_most_likely_tree(trees)
+    # If tree is not (or no longer) 'auto', try to use the cache for nentries
+    if tree != 'auto' and USE_CACHE:
+        nentries = _count_entries_cache(rootfile, tree)
+        if nentries: return nentries
+    # At least some part of the cached couldn't return, so open the root file
+    with open_root(rootfile) as tfile:
+        if tree == 'auto':
+            trees = get_trees(rootfile)
+            if len(trees) == 0:
+                logger.error('No TTrees found in %s', tfile)
+                return None
+            tree = _select_most_likely_tree(trees)
+        nentries = _count_entries_root(tfile, tree)
+    # Cache the result
+    if USE_CACHE:
+        CACHE_NENTRIES[rootfile + '___' + tree] = nentries
+        CACHE_NENTRIES.sync()
+    return nentries
+
+def draw_branch(rootfile, branch, tree='auto', ext='.png'):
+    """
+    Quick utility to plot a histogram in a rootfile
+    """
+    import ROOT
+    ROOT.gROOT.SetBatch(True)
+    with open_root(rootfile) as tfile:
+        c = ROOT.TCanvas('cdrawbranch', 'cdrawbranch', 800, 600)
+        c.cd()
+        treename = tree = get_most_likely_tree(tfile) if tree=='auto' else tree
+        tree = tfile.Get(treename)
+        tree.Draw(branch)
+        c.SaveAs('{}{}'.format(branch, ext))
+        c.Close()
+
+def _iter_branches_in_ttree(node, level=1):
+    """
+    Yields branches in a ttree recursively
+    """
+    listofbranches = node.GetListOfBranches()
+    n_branches = listofbranches.GetEntries()
+    for i_branch in range(n_branches):
+        branch = listofbranches[i_branch]
+        yield branch, level
+        for subbranch, sublevel in _iter_branches_in_ttree(branch, level=level+1):
+            yield subbranch, sublevel
+
+def iter_branches(rootfile):
+    """
+    Loops over all trees and yields (treename, n_entries, branches).
+    """
+    with open_root(rootfile) as tfile:
+        for treename in get_trees(tfile):
+            tree = tfile.Get(treename)
+            n_entries = tree.GetEntries()
+            branches = list(_iter_branches_in_ttree(tree))
+            yield treename, n_entries, branches

@@ -1,0 +1,26 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import seutils
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument('rootfile', type=str, help='Rootfile to be drawn from')
+parser.add_argument('-t', '--tree', type=str, help='Name of the tree to count', default='auto')
+args = parser.parse_args()
+
+def main():
+    for treename, n_entries, branches in seutils.root.iter_branches(args.rootfile):
+        print(
+            '\033[31mTTree {0} ({1} entries)\033[0m'
+            .format(treename, n_entries)
+            )
+        for branch, level in branches:
+            print(
+                '{indent}{branch_name}'
+                .format(
+                    indent=level*'  ',
+                    branch_name=branch.GetName()
+                    )
+                )
+
+if __name__ == '__main__':
+    main()
