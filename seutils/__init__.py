@@ -30,6 +30,11 @@ def debug(flag=True):
     """Sets the logger level to debug (for True) or warning (for False)"""
     logger.setLevel(logging.DEBUG if flag else DEFAULT_LOGGING_LEVEL)
 
+DRYMODE = False
+def drymode(flag=True):
+    global DRYMODE
+    DRYMODE = flag
+
 def is_string(string):
     """
     Checks strictly whether `string` is a string
@@ -51,15 +56,16 @@ def executable_exists(executable):
 
 N_SECONDS_SLEEP = 10
 
-def run_command(cmd, dry=False, non_zero_exitcode_ok=False, n_retries=0):
+def run_command(cmd, dry=None, non_zero_exitcode_ok=False, n_retries=0):
     """
     Runs a command and captures output. Raises an exception on non-zero exit code,
     except if non_zero_exitcode_ok is set to True.
     """
     i_attempt = 0
+    if dry is None: dry = DRYMODE
     while True:
         logger.info('Issuing command (attempt %s: %s)', i_attempt, ' '.join(cmd))
-        if dry: return
+        if dry: return ''
         process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
@@ -99,11 +105,15 @@ def get_exitcode(cmd):
     """
     if is_string(cmd): cmd = [cmd]
     logger.debug('Getting exit code for "%s"', ' '.join(cmd))
-    FNULL = open(os.devnull, 'w')
-    process = subprocess.Popen(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
-    process.communicate()[0]
-    logger.debug('Got exit code %s', process.returncode)
-    return process.returncode
+    if DRYMODE:
+        returncode = 0
+    else:
+        FNULL = open(os.devnull, 'w')
+        process = subprocess.Popen(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+        process.communicate()[0]
+        returncode = process.returncode
+    logger.debug('Got exit code %s', returncode)
+    return returncode
 
 def bytes_to_human_readable(num, suffix='B'):
     """
@@ -600,16 +610,18 @@ def cp(src, dst, method='auto', **kwargs):
         logger.error('Method %s is not a valid copying method!', method)
         raise
 
-def _cp_xrdcp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True):
+def _cp_xrdcp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
     cmd = [ 'xrdcp', src, dst ]
     if not verbose: cmd.insert(1, '-s')
     if create_parent_directory: cmd.insert(1, '-p')
+    if force: cmd.insert(1, '-f')
     run_command(cmd, n_retries=n_retries)
 
-def _cp_gfal(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True):
+def _cp_gfal(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
     cmd = [ 'gfal-copy', '-t', '180', src, dst ]
     if create_parent_directory: cmd.insert(1, '-p')
     if verbose: cmd.insert(1, '-v')
+    if force: cmd.insert(1, '-f')
     run_command(cmd, n_retries=n_retries)
 
 def cp_to_se(src, dst, **kwargs):
