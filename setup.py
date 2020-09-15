@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name          = 'seutils',
-    version       = '0.30',
+    version       = '0.31',
     license       = 'BSD 3-Clause License',
     description   = 'Description text',
     url           = 'https://github.com/tklijnsma/seutils.git',
@@ -15,6 +15,6 @@ setup(
     scripts       = [
         'bin/seu-format', 'bin/seu-ls', 'bin/seu-hadd', 'bin/seu-du',
         'bin/seu-nentries', 'bin/seu-takechunkroot', 'bin/seu-drawbranch',
-        'bin/seu-printbranches'
+        'bin/seu-printbranches', 'bin/seu-rm'
         ],
     )

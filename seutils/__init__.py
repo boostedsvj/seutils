@@ -360,6 +360,41 @@ def _mkdir_xrootd(directory):
     mgm, directory = split_mgm(directory)
     run_command([ 'xrdfs', mgm, 'mkdir', '-p', directory ])
 
+def rm(path, recursive=False):
+    """
+    Creates a path on the SE
+    Does not check if path already exists
+    """
+    path = format(path) # Ensures format
+    logger.warning('Removing path on SE: {0}'.format(path))
+    _rm_eos(path, recursive) if use_xrootd_path(path) else _rm_gfal(path, recursive)
+
+def _rm_gfal(path, recursive):
+    cmd = [ 'gfal-rm', path ]
+    if recursive: cmd.insert(-1, '-r')
+    run_command(cmd)
+
+def _rm_xrootd(path, recursive):
+    # NB: xrdfs cannot recursively delete directories, so this is not the preferred tool
+    mgm, lfn = split_mgm(path)
+    if _isdir_xrootd(path):
+        if not recursive:
+            raise RuntimeError('{} is a directory but rm instruction is not recursive'.format(path))
+        rm = 'rmdir'
+    else:
+        rm = 'rm'
+    cmd = [ 'xrdfs', mgm, rm, lfn ]
+    run_command(cmd)
+
+def _rm_eos(path, recursive):
+    mgm, lfn = split_mgm(path)
+    if _isdir_xrootd(path):
+        if not recursive:
+            raise RuntimeError('{} is a directory but rm instruction is not recursive'.format(path))
+    cmd = [ 'eos', mgm, 'rm', lfn ]
+    if recursive: cmd.insert(-1, '-r')
+    run_command(cmd)
+
 def stat(path, not_exist_ok=False):
     """
     Returns an Inode object for path.
