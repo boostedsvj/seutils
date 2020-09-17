@@ -15,11 +15,10 @@ except NameError:
     pass
 
 def main():
+    mgm = args.mgm
     if not args.mgm:
         mgm_fnal = seutils.cli_detect_fnal()
         if mgm_fnal: mgm = mgm_fnal
-    else:
-        mgm = args.mgm
 
     for path in args.paths:
         path = seutils.cli_flexible_format(path, mgm)
