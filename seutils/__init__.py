@@ -367,7 +367,11 @@ def rm(path, recursive=False):
     """
     path = format(path) # Ensures format
     logger.warning('Removing path on SE: {0}'.format(path))
-    _rm_eos(path, recursive) if use_xrootd_path(path) else _rm_gfal(path, recursive)
+    import distutils
+    if distutils.spawn.find_executable('eos') and use_xrootd_path(path):
+        _rm_eos(path, recursive)
+    else:
+        _rm_gfal(path, recursive)
 
 def _rm_gfal(path, recursive):
     cmd = [ 'gfal-rm', path ]
