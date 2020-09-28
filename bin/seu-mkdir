@@ -4,13 +4,13 @@ import seutils
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument(
-    'lfn', type=str, nargs='1',
+    'lfn', type=str,
     help='Directory to be created. Parent directies are created by default.'
     )
 args = parser.parse_args()
 
 def main():
-    lfn = seutils.cli_flexible_format(lfn, seutils.cli_detect_fnal())
+    lfn = seutils.cli_flexible_format(args.lfn, seutils.cli_detect_fnal())
     seutils.mkdir(lfn)
 
 if __name__ == '__main__':
