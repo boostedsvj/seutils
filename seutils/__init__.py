@@ -130,11 +130,18 @@ def bytes_to_human_readable(num, suffix='B'):
 # Path management
 
 DEFAULT_MGM = None
+MGM_ENV_KEY = 'SEU_DEFAULT_MGM'
+
+def read_default_mgm_from_env():
+    if MGM_ENV_KEY in os.environ: set_default_mgm(os.environ[MGM_ENV_KEY])
+# Set the default once at import time
+read_default_mgm_from_env()
 
 def set_default_mgm(mgm):
     """
     Sets the default mgm
     """
+    global DEFAULT_MGM
     DEFAULT_MGM = mgm
     logger.info('Default mgm set to %s', mgm)
 
@@ -878,24 +885,11 @@ def ls_wildcard(pattern, stat=False):
 # _______________________________________________________
 # Command line helpers
 
-MGM_ENV_KEY = 'SEU_DEFAULT_MGM'
-
-def cli_update_default_mgm(mgm):
-    if MGM_ENV_KEY in os.environ:
-        logger.warning(
-            'Setting default mgm to %s (previously: %s)',
-            mgm, os.environ[MGM_ENV_KEY]
-            )
-    else:
-        logger.warning('Setting default mgm to %s', mgm)
-    os.environ[MGM_ENV_KEY] = mgm
-
 def cli_detect_fnal():
-    mgm = None
-    if os.uname()[1].endswith('.fnal.gov'):
+    if DEFAULT_MGM is None and os.uname()[1].endswith('.fnal.gov'):
         mgm = 'root://cmseos.fnal.gov'
         logger.warning('Detected fnal.gov host; using mgm %s as default if necessary', mgm)
-    return mgm
+        set_default_mgm(mgm)
 
 def cli_flexible_format(lfn, mgm=None):
     if not has_protocol(lfn) and not lfn.startswith('/'):
