@@ -132,11 +132,6 @@ def bytes_to_human_readable(num, suffix='B'):
 DEFAULT_MGM = None
 MGM_ENV_KEY = 'SEU_DEFAULT_MGM'
 
-def read_default_mgm_from_env():
-    if MGM_ENV_KEY in os.environ: set_default_mgm(os.environ[MGM_ENV_KEY])
-# Set the default once at import time
-read_default_mgm_from_env()
-
 def set_default_mgm(mgm):
     """
     Sets the default mgm
@@ -144,6 +139,11 @@ def set_default_mgm(mgm):
     global DEFAULT_MGM
     DEFAULT_MGM = mgm
     logger.info('Default mgm set to %s', mgm)
+
+def read_default_mgm_from_env():
+    if MGM_ENV_KEY in os.environ: set_default_mgm(os.environ[MGM_ENV_KEY])
+# Set the default once at import time
+read_default_mgm_from_env()
 
 def get_default_mgm():
     if DEFAULT_MGM is None:
