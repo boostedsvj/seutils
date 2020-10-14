@@ -283,6 +283,87 @@ def use_xrootd_path(path):
     return use_xrootd(get_protocol(path))
 
 # _______________________________________________________
+# Cache
+
+USE_CACHE = False
+CACHEDIR = osp.abspath('.seutils-cache')
+CACHES = {}
+
+def use_cache(flag=True):
+    """
+    Convenience function to turn on and off caching
+    """
+    global USE_CACHE
+    USE_CACHE = flag
+
+def make_cache(subcache_name, make_if_not_exist=True):
+    """
+    Returns a FileCache object. Will be created if it doesn't exist already
+    """
+    if not USE_CACHE: return
+    global CACHES
+    if not subcache_name in CACHES:
+        from .cache import FileCache
+        cache = FileCache(subcache_name, app_cache_dir=CACHEDIR)
+        CACHES[subcache_name] = cache
+    return CACHES[subcache_name]
+
+def read_cache(subcache_name, key):
+    """
+    Attempts to get a value from a cache. Returns None if it was not found
+    """
+    if not USE_CACHE: return None
+    val = make_cache(subcache_name).get(key, None)
+    if not(val is None): logger.debug('Using cached result for %s from cache %s', key, subcache_name)
+    return val
+
+def write_cache(subcache_name, key, value):
+    """
+    Writes a value to a cache
+    """
+    if USE_CACHE:
+        logger.debug('Writing key %s to cache %s', key, subcache_name)
+        subcache = make_cache(subcache_name)
+        subcache[key] = value
+        subcache.sync()
+
+def tarball_cache(dst='seutils-cache.tar.gz'):
+    """
+    Dumps the cache to a tarball
+    """
+    if not USE_CACHE: raise Exception('No active cache to save to a file')
+    if not dst.endswith('.tar.gz'): dst += '.tar.gz'
+    dst = osp.abspath(dst)
+    try:
+        _return_dir = os.getcwd()
+        os.chdir(CACHEDIR)
+        cmd = ['tar', '-zcvf', dst, '.']
+        logger.info('Dumping %s --> %s', CACHEDIR, dst)
+        run_command(cmd)
+        return dst
+    finally:
+        os.chdir(_return_dir)
+
+def load_tarball_cache(tarball, dst=None):
+    """
+    Extracts a cache tarball to cachedir and activates that cache
+    """
+    global USE_CACHE, CACHEDIR
+    if dst is None: dst = CACHEDIR
+    dst = osp.abspath(dst)
+    logger.info('Extracting %s --> %s', tarball, dst)
+    if not osp.isdir(dst): os.makedirs(dst)
+    cmd = [
+        'tar', '-xvf', tarball,
+        '-C', dst
+        ]
+    run_command(cmd)
+    # Activate it
+    USE_CACHE = True
+    CACHEDIR = dst
+    logger.info('Activated cache for path %s', CACHEDIR)
+
+# _______________________________________________________
 # Interactions with SE
 
 class Inode(object):
@@ -412,7 +493,11 @@ def stat(path, not_exist_ok=False):
     If not_exist_ok is True and the path doesn't exist, it returns None
     without raising an exception
     """
-    return _stat_xrootd(path, not_exist_ok) if use_xrootd_path(path) else _stat_gfal(path, not_exist_ok)
+    val = read_cache('seutils-cache.stat', path.strip())
+    if val is None:
+        val = _stat_xrootd(path, not_exist_ok) if use_xrootd_path(path) else _stat_gfal(path, not_exist_ok)
+        write_cache('seutils-cache.stat', path.strip(), val)
+    return val
 
 def stat_function(*args, **kwargs):
     """
@@ -495,7 +580,11 @@ def exists(path):
     """
     Returns a boolean indicating whether the path exists.
     """
-    return _exists_xrootd(path) if use_xrootd_path(path) else _exists_gfal(path)
+    val = read_cache('seutils-cache.exists', path.strip())
+    if val is None:
+        val = _exists_xrootd(path) if use_xrootd_path(path) else _exists_gfal(path)
+        write_cache('seutils-cache.exists', path.strip(), val)
+    return val
 
 def _exists_gfal(path):
     return get_exitcode(['gfal-stat', path]) == 0
@@ -510,7 +599,11 @@ def isdir(directory):
     Returns a boolean indicating whether the directory exists.
     Also returns False if the passed path is a file.
     """
-    return _isdir_xrootd(directory) if use_xrootd_path(directory) else _isdir_gfal(directory)
+    val = read_cache('seutils-cache.isdir', directory.strip())
+    if val is None:
+        val = _isdir_xrootd(directory) if use_xrootd_path(directory) else _isdir_gfal(directory)
+        write_cache('seutils-cache.isdir', directory.strip(), val)
+    return val
 
 def _isdir_gfal(directory):
     statinfo = _stat_gfal(directory, not_exist_ok=True)
@@ -527,7 +620,11 @@ def isfile(path):
     Returns a boolean indicating whether the file exists.
     Also returns False if the passed path is a directory.
     """
-    return _isfile_xrootd(path) if use_xrootd_path(path) else _isfile_gfal(path)
+    val = read_cache('seutils-cache.isfile', path.strip())
+    if val is None:
+        val = _isfile_xrootd(path) if use_xrootd_path(path) else _isfile_gfal(path)
+        write_cache('seutils-cache.isfile', path.strip(), val)    
+    return val
 
 def _isfile_xrootd(path):
     mgm, path = split_mgm(path)
@@ -546,7 +643,11 @@ def is_file_or_dir(path):
     Returns 1 if it's a directory
     Returns 2 if it's a file
     """
-    return _is_file_or_dir_xrootd(path) if use_xrootd_path(path) else _is_file_or_dir_gfal(path)
+    val = read_cache('seutils-cache.isfileordir', path.strip())
+    if val is None:
+        val = _is_file_or_dir_xrootd(path) if use_xrootd_path(path) else _is_file_or_dir_gfal(path)
+        write_cache('seutils-cache.isfileordir', path.strip(), val)    
+    return val
 
 def _is_file_or_dir_gfal(path):
     statinfo = _stat_gfal(path, not_exist_ok=True)
@@ -582,13 +683,18 @@ def listdir(directory, stat=False, assume_directory=False):
     If 'assume_directory' is True, it is assumed the user took
     care to pass a path to a valid directory, and no check is performed
     """
-    if not assume_directory:
-        if not isdir(directory):
-            raise RuntimeError(
-                '{0} is not a valid directory'
-                .format(directory)
-                )
-    return _listdir_xrootd(directory, stat) if use_xrootd_path(directory) else _listdir_gfal(directory, stat)
+    key = directory.strip() + '___stat{}'.format(stat)
+    val = read_cache('seutils-cache.listdir', key)
+    if not val:
+        if not assume_directory:
+            if not isdir(directory):
+                raise RuntimeError(
+                    '{0} is not a valid directory'
+                    .format(directory)
+                    )
+        val = _listdir_xrootd(directory, stat) if use_xrootd_path(directory) else _listdir_gfal(directory, stat)
+        write_cache('seutils-cache.listdir', key, val)
+    return val
 
 def _listdir_xrootd(directory, stat=False):
     mgm, path = split_mgm(directory)
