@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, glob, shutil, time
+import logging, subprocess, os, glob, shutil, time, datetime
 from contextlib import contextmanager
 
 DEFAULT_LOGGING_LEVEL = logging.WARNING
@@ -317,6 +317,7 @@ def read_cache(subcache_name, key):
     if not(val is None): logger.debug('Using cached result for %s from cache %s', key, subcache_name)
     return val
 
+_LAST_CACHE_WRITE = None
 def write_cache(subcache_name, key, value):
     """
     Writes a value to a cache
@@ -326,23 +327,44 @@ def write_cache(subcache_name, key, value):
         subcache = make_cache(subcache_name)
         subcache[key] = value
         subcache.sync()
+        global _LAST_CACHE_WRITE
+        _LAST_CACHE_WRITE = datetime.datetime.now()
 
-def tarball_cache(dst='seutils-cache.tar.gz'):
+_LAST_TARBALL_CACHE = None
+_LAST_TARBALL_PATH = None
+def tarball_cache(dst='seutils-cache.tar.gz', only_if_updated=False):
     """
-    Dumps the cache to a tarball
+    Dumps the cache to a tarball.
+    If only_if_updated is True, an additional check is made to see whether
+    the last call to tarball_cache() was made after the last call to write_cache();
+    if so, the last created tarball presumably still reflects the current state of
+    the cache, and no new tarball is created. This will only work within the same python
+    session (timestamps are not saved to files).
     """
+    global _LAST_TARBALL_CACHE, _LAST_TARBALL_PATH
     if not USE_CACHE: raise Exception('No active cache to save to a file')
     if not dst.endswith('.tar.gz'): dst += '.tar.gz'
     dst = osp.abspath(dst)
+    if only_if_updated:
+        if _LAST_TARBALL_CACHE:
+            if _LAST_CACHE_WRITE is None or _LAST_CACHE_WRITE < _LAST_TARBALL_CACHE:
+                # Either no write has taken place or it was before the last tarball creation;
+                # use the last created tarball and don't run again
+                logger.info('Detected no change w.r.t. last tarball %s; using it instead', _LAST_TARBALL_PATH)
+                return _LAST_TARBALL_PATH
     try:
         _return_dir = os.getcwd()
+        if not osp.isdir(CACHEDIR): os.makedirs(CACHEDIR) # Empty dir can be tarballed too for consistency
         os.chdir(CACHEDIR)
         cmd = ['tar', '-zcvf', dst, '.']
         logger.info('Dumping %s --> %s', CACHEDIR, dst)
         run_command(cmd)
+        _LAST_TARBALL_CACHE = datetime.datetime.now()
+        _LAST_TARBALL_PATH = dst
         return dst
     finally:
         os.chdir(_return_dir)
+    return dst
 
 def load_tarball_cache(tarball, dst=None):
     """
