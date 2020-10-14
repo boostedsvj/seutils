@@ -35,6 +35,16 @@ def drymode(flag=True):
     global DRYMODE
     DRYMODE = flag
 
+@contextmanager
+def drymode_context(flag=True):
+    global DRYMODE
+    _saved_DRYMODE = DRYMODE
+    DRYMODE = flag
+    try:
+        yield DRYMODE
+    finally:
+        DRYMODE = _saved_DRYMODE
+
 def is_string(string):
     """
     Checks strictly whether `string` is a string
@@ -64,7 +74,7 @@ def run_command(cmd, dry=None, non_zero_exitcode_ok=False, n_retries=0):
     i_attempt = 0
     if dry is None: dry = DRYMODE
     while True:
-        logger.info('Issuing command (attempt %s: %s)', i_attempt, ' '.join(cmd))
+        logger.info('%sIssuing command (attempt %s: %s)', '(dry) ' if dry else '', i_attempt, ' '.join(cmd))
         if dry: return ''
         process = subprocess.Popen(
             cmd,
