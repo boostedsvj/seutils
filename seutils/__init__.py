@@ -95,7 +95,7 @@ def run_command(cmd, dry=None, non_zero_exitcode_ok=False, n_retries=0):
             logger.info('Command exited with status 0 - all good')
         else:
             if non_zero_exitcode_ok:
-                logger.info('Command exited with status %s', return_code)
+                logger.info('Command exited with status %s', returncode)
                 return returncode
             else:
                 logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
@@ -258,6 +258,7 @@ def _join_mgm_lfn(mgm, lfn):
             'This function expects filenames that start with \'/\''
             )
     if not mgm.endswith('/'): mgm += '/'
+    # logger.error('mgm=%s lfn=%s', mgm, lfn)
     return mgm + lfn
 
 def format(path, mgm=None):
@@ -539,7 +540,8 @@ def stat_function(*args, **kwargs):
 
 def _stat_gfal(path, not_exist_ok=False):
     import datetime
-    output = run_command(['gfal-stat', path], non_zero_exitcode_ok=not_exist_ok)
+    cmd = ['gfal-stat', path]
+    output = run_command(cmd, non_zero_exitcode_ok=not_exist_ok)
     if isinstance(output, int):
         # The command failed; if output is 2 the path did not exist,
         # which might be okay if not_exist_ok is True, but other codes
@@ -1030,6 +1032,7 @@ def cli_detect_fnal():
         set_default_mgm(mgm)
 
 def cli_flexible_format(lfn, mgm=None):
+    cli_detect_fnal()
     if not has_protocol(lfn) and not lfn.startswith('/'):
         try:
             prefix = '/store/user/' + os.environ['USER']
