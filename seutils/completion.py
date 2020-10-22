@@ -78,13 +78,19 @@ def complete_ls(cmd, prev_word, curr_word, line):
             print(' ' + '\n'.join(contents))
         else:
             log('Only printing expansion %s', expand_to)
-            print(expand_to.split(':')[-1].strip())
+            if ':' in raw_lfn:
+                print(expand_to.split(':')[-1].strip())
+            else:
+                print(expand_to.strip())
     else:
         log('Single content')
         c = contents[0]
         if seutils.isdir(c): c += '/'
         # The ':' counts as a splitting in `complete`... Only print whatever comes after the ':'
-        print(c.split(':')[-1])
+        if ':' in raw_lfn:
+            print(c.split(':')[-1])
+        else:
+            print(c)
 
 
 def find_longest_matching_start(lines):
