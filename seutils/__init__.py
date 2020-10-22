@@ -66,10 +66,10 @@ def executable_exists(executable):
 
 N_SECONDS_SLEEP = 10
 
-def run_command(cmd, dry=None, non_zero_exitcode_ok=False, n_retries=0):
+def run_command(cmd, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_output_on_nonzero_exitcode=False):
     """
     Runs a command and captures output. Raises an exception on non-zero exit code,
-    except if non_zero_exitcode_ok is set to True.
+    except if nonzero_exitcode_ok is set to True.
     """
     i_attempt = 0
     if dry is None: dry = DRYMODE
@@ -94,9 +94,9 @@ def run_command(cmd, dry=None, non_zero_exitcode_ok=False, n_retries=0):
         if returncode == 0:
             logger.info('Command exited with status 0 - all good')
         else:
-            if non_zero_exitcode_ok:
+            if nonzero_exitcode_ok:
                 logger.info('Command exited with status %s', returncode)
-                return returncode
+                return output if return_output_on_nonzero_exitcode else returncode
             else:
                 logger.error('Exit status {0} for command: {1}'.format(returncode, cmd))
                 logger.error('Output:\n%s', '\n'.join(output))
@@ -135,6 +135,11 @@ def bytes_to_human_readable(num, suffix='B'):
         num /= 1024.0
     return '{0:3.1f} {1}b'.format(num, 'Y')
 
+def is_macos():
+    """
+    Checks if the platform is Mac OS
+    """
+    return os.uname()[0] == 'Darwin'
 
 # _______________________________________________________
 # Path management
@@ -541,7 +546,7 @@ def stat_function(*args, **kwargs):
 def _stat_gfal(path, not_exist_ok=False):
     import datetime
     cmd = ['gfal-stat', path]
-    output = run_command(cmd, non_zero_exitcode_ok=not_exist_ok)
+    output = run_command(cmd, nonzero_exitcode_ok=not_exist_ok)
     if isinstance(output, int):
         # The command failed; if output is 2 the path did not exist,
         # which might be okay if not_exist_ok is True, but other codes
@@ -579,7 +584,7 @@ def _stat_xrootd(path, not_exist_ok=False):
     import datetime
     mgm, path = split_mgm(path)
     cmd = [ 'xrdfs', mgm, 'stat', path ]
-    output = run_command(cmd, non_zero_exitcode_ok=not_exist_ok)
+    output = run_command(cmd, nonzero_exitcode_ok=not_exist_ok)
     if isinstance(output, int):
         # The command failed; if output is 54 the path did not exist,
         # which might be okay if not_exist_ok is True, but other codes
@@ -679,7 +684,12 @@ def is_file_or_dir(path):
     """
     val = read_cache('seutils-cache.isfileordir', path.strip())
     if val is None:
-        val = _is_file_or_dir_xrootd(path) if use_xrootd_path(path) else _is_file_or_dir_gfal(path)
+        if is_macos():
+            val = _is_file_or_dir_xrootd_outputbased(path)
+        elif use_xrootd_path(path):
+            val = _is_file_or_dir_xrootd(path)
+        else:
+            val = _is_file_or_dir_gfal(path)
         write_cache('seutils-cache.isfileordir', path.strip(), val)    
     return val
 
@@ -710,6 +720,27 @@ def _is_file_or_dir_xrootd(path):
             'Command {0} exitted with code {1}; unknown case'
             .format(' '.join(cmd), status)
             )
+
+def _is_file_or_dir_xrootd_outputbased(path):
+    """
+    Mac OS has bugs in xrdfs that make the exit code unreliable, use the raw output instead
+    """
+    mgm, path = split_mgm(path)
+    cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
+    output = run_command(cmd, nonzero_exitcode_ok=True, return_output_on_nonzero_exitcode=True)
+    exists = False
+    is_directory = False
+    for line in output:
+        if line.startswith('Flags:'):
+            exists = True
+            if 'IsDir' in line: is_directory = True
+            break
+    if not exists:
+        return 0
+    elif is_directory:
+        return 1
+    else:
+        return 2
 
 def listdir(directory, stat=False, assume_directory=False):
     """
