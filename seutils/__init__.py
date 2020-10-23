@@ -723,8 +723,11 @@ def _is_file_or_dir_xrootd(path):
 
 def _is_file_or_dir_xrootd_outputbased(path):
     """
-    Mac OS has bugs in xrdfs that make the exit code unreliable, use the raw output instead
+    Mac OS somehow introduces a race condition between the main thread and the xrd polling thread
+    see https://github.com/xrootd/xrootd/issues/1198
     """
+    from time import sleep
+    sleep(2)
     mgm, path = split_mgm(path)
     cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
     output = run_command(cmd, nonzero_exitcode_ok=True, return_output_on_nonzero_exitcode=True)
@@ -1080,3 +1083,4 @@ def cli_flexible_format(lfn, mgm=None):
 # root utils extension
 
 from . import rootutils as root
+from . import pyxrd
