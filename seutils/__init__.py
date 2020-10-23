@@ -56,14 +56,6 @@ def is_string(string):
         basestring = str
     return isinstance(string, basestring)
 
-def executable_exists(executable):
-    """
-    Takes a string that is the executable, and returns True if the executable
-    is one the path
-    """
-    import distutils.spawn
-    return not(distutils.spawn.find_executable(executable) is None)
-
 N_SECONDS_SLEEP = 10
 
 def run_command(cmd, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_output_on_nonzero_exitcode=False):
@@ -285,18 +277,40 @@ def get_protocol(path, mgm=None):
     path = format(path, mgm)
     return path.split('://')[0]
 
-def use_xrootd(protocol):
+def cmd_exists(executable):
     """
-    Based on the protocol, returns True if xrootd tools should be used, or gfal tools
+    Checks if a command can be found on the system path.
+    Not a very smart implementation but does the job usually.
+    See https://stackoverflow.com/a/28909933/9209944 .
     """
-    # Not sure if this simple check will be enough in the futute
-    return (protocol == 'root')
+    return any(os.access(os.path.join(path, executable), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def use_xrootd_path(path):
+class Inode(object):
     """
-    Determines if xrootd should be used based on the passed path
+    Basic container of information representing an inode on a
+    storage element: isdir/isfile, modification time, size, and path.
     """
-    return use_xrootd(get_protocol(path))
+    @classmethod
+    def from_path(cls, path, mgm=None):
+        path = format(path, mgm)
+        return stat(path)
+
+    def __init__(self, path, modtime, isdir, size):
+        self.path = path
+        self.modtime = modtime
+        self.isdir = isdir
+        self.size = size
+        # Some derived properties
+        self.isfile = not(self.isdir)
+        self.size_human = bytes_to_human_readable(float(self.size))
+        self.basename = osp.basename(path)
+
+    def __repr__(self):
+        if len(self.path) > 40:
+            shortpath = self.path[:10] + '...' + self.path[-15:]
+        else:
+            shortpath = self.path
+        return super(Inode, self).__repr__().replace('object', shortpath)
 
 # _______________________________________________________
 # Cache
@@ -345,6 +359,23 @@ def write_cache(subcache_name, key, value):
         subcache.sync()
         global _LAST_CACHE_WRITE
         _LAST_CACHE_WRITE = datetime.datetime.now()
+
+def cache(fn):
+    """
+    Function decorator to cache output of certain commands
+    """
+    cache_name = 'seutils-cache.' + fn.__name__
+    def wrapper(path, *args, **kwargs):
+        # Cache is basically a key-value dump; determine the key to use
+        # For most purposes, just the path works well enough
+        cache_key = fn.keygen(path, *args, **kwargs) if hasattr(fn, 'keygen') else path.strip()
+        # Try to read the cache; if not possible, evaluate cmd and store the result
+        val = read_cache(cache_name, cache_key)
+        if val is None:
+            val = fn(path, *args, **kwargs)
+            write_cache(cache_name, cache_key, val)
+        return val
+    return wrapper
 
 _LAST_TARBALL_CACHE = None
 _LAST_TARBALL_PATH = None
@@ -402,140 +433,123 @@ def load_tarball_cache(tarball, dst=None):
     logger.info('Activated cache for path %s', CACHEDIR)
 
 # _______________________________________________________
-# Interactions with SE
+# Helpers for interactions with SE
 
-class Inode(object):
+N_COPY_RETRIES = 0
+
+# Import implementations
+from . import xrd
+from . import pyxrd
+from . import gfal
+from . import eos
+_implementations = [ xrd, pyxrd, gfal, eos ]
+
+def get_implementation(name):
     """
-    Basic container of information representing an inode on a
-    storage element: isdir/isfile, modification time, size, and path
+    Takes the name of a submodule that contains implementations. Returns that module object.
     """
-    @classmethod
-    def from_path(cls, path, mgm=None):
-        path = format(path, mgm)
-        return stat(path)
+    for implementation in _implementations:
+        if implementation.__name__.rsplit('.',1)[-1] == name:
+            break
+    else:
+        raise Exception('No such implementation: {0}'.format(name))
+    return implementation
 
-    @classmethod
-    def from_statline_gfal(cls, statline, directory):
-        """
-        `gfal-ls -l` returns only basenames, so the directory from which the
-        statline originated is needed as an argument.
-        """
-        import datetime
-        components = statline.strip().split()
-        if not len(components) >= 9:
-            raise RuntimeError(
-                'Expected at least 9 components for stat line:\n{0}'
-                .format(statline)
-                )
-        try:
-            isdir = components[0].startswith('d')
-            timestamp = ' '.join(components[5:8])
-            modtime = datetime.datetime.strptime(timestamp, '%b %d %H:%M')
-            size = int(components[4])
-            path = osp.join(directory, components[8])
-            return cls(path, modtime, isdir, size)
-        except:
-            logger.error('Error parsing statline: %s', statline)
-            raise
+_commands = [
+    'mkdir', 'rm', 'stat', 'exists', 'isdir',
+    'isfile', 'is_file_or_dir', 'listdir', 'cp',
+    ]
 
-    @classmethod
-    def from_statline_xrootd(cls, statline, mgm):
-        import datetime
-        components = statline.strip().split()
-        if not len(components) == 5:
-            raise RuntimeError(
-                'Expected 5 components for stat line:\n{0}'
-                .format(statline)
-                )
-        isdir = components[0].startswith('d')
-        modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
-        size = int(components[3])
-        path = format(components[4], mgm)
-        return cls(path, modtime, isdir, size)
+def get_command(cmd_name, implementation=None, path=None):
+    """
+    Returns an implementation of a command.
+    Parameter `implementation` is a module object; it can also be a name of a module.
+    If it's None, a heuristic is ran to guess the best implementation.
+    The `path` parameter is optional and only serves to make a better guess for the implementation.
+    """
+    if not cmd_name in _commands:
+        raise Exception('Invalid command: {0}'.format(cmd_name))
+    if implementation is None:
+        implementation = best_implementation_heuristic(cmd_name, path)[0]
+    elif is_string(implementation):
+        implementation = get_implementation(implementation)
+    if not hasattr(implementation, cmd_name):
+        raise Exception(
+            'Implementation {0} has no function {1}'
+            .format(implementation.__name__, cmd_name)
+            )
+    return getattr(implementation, cmd_name)
 
-    def __init__(self, path, modtime, isdir, size):
-        self.path = path
-        self.modtime = modtime
-        self.isdir = isdir
-        self.size = size
-        # Some derived properties
-        self.isfile = not(self.isdir)
-        self.size_human = bytes_to_human_readable(float(self.size))
-        self.basename = osp.basename(path)
+def best_implementation_heuristic(cmd_name, path=None):
+    """
+    Determines the best implementation for a path.
+    The order is loosely as follows:
+    - If the python bindings of xrootd are importable, those are probably the most reliable
+    - If the path does not start with root://, it's safer to use gfal
+    - For root://-starting paths, use xrootd
+    """
+    preferred_order = []
+    def check(module):
+        if module.is_installed() and hasattr(module, cmd_name) and not(module in preferred_order):
+            preferred_order.append(module)
+    check(pyxrd)
+    # If this concerns removal, eos is the only tool that can do recursive directory removal:
+    if cmd_name == 'rm': check(eos)
+    # If path starts with root://, prefer xrd over gfal, otherwise the other way around
+    if not(path is None) and get_protocol(path) != 'root':
+        check(gfal)
+        check(xrd)
+    else:
+        check(xrd)
+        check(gfal)
+    # Prefer eos last
+    check(eos)
+    # Check if at least one method is found
+    if not len(preferred_order):
+        raise Exception(
+            'No good implementation could be found for cmd {0} (path {1})'
+            .format(cmd_name, path)
+            )
+    logger.info('Using module %s to execute \'%s\' (path: %s)', preferred_order[0].__name__, cmd_name, path)
+    return preferred_order
 
-    def __repr__(self):
-        if len(self.path) > 40:
-            shortpath = self.path[:10] + '...' + self.path[-15:]
-        else:
-            shortpath = self.path
-        return super(Inode, self).__repr__().replace('object', shortpath)
 
-def mkdir(directory):
+# _______________________________________________________
+# Actual interactions with SE
+# The functions below are just wrappers for the actual implementations in
+# separate modules. All functions have an `implementation` keyword; If set
+# to None, and the 'best' implementation is guessed.
+
+def mkdir(path, implementation=None):
     """
     Creates a directory on the SE
     Does not check if directory already exists
     """
-    directory = format(directory) # Ensures format
-    logger.warning('Creating directory on SE: {0}'.format(directory))
-    _mkdir_xrootd(directory) if use_xrootd_path(directory) else _mkdir_gfal(directory)
+    path = format(path) # Ensures format
+    logger.warning('Creating directory on SE: {0}'.format(path))
+    cmd = get_command('mkdir', implementation=implementation, path=path)
+    cmd(path)
 
-def _mkdir_gfal(directory):
-    run_command([ 'gfal-mkdir', '-p', directory ])
-
-def _mkdir_xrootd(directory):
-    mgm, directory = split_mgm(directory)
-    run_command([ 'xrdfs', mgm, 'mkdir', '-p', directory ])
-
-def rm(path, recursive=False):
+def rm(path, recursive=False, implementation=None):
     """
     Creates a path on the SE
     Does not check if path already exists
     """
     path = format(path) # Ensures format
     logger.warning('Removing path on SE: {0}'.format(path))
-    import distutils
-    if distutils.spawn.find_executable('eos') and use_xrootd_path(path):
-        _rm_eos(path, recursive)
-    else:
-        _rm_gfal(path, recursive)
+    cmd = get_command('rm', implementation=implementation, path=path)
+    cmd(path, recursive=recursive)
 
-def _rm_gfal(path, recursive):
-    cmd = [ 'gfal-rm', path ]
-    if recursive: cmd.insert(-1, '-r')
-    run_command(cmd)
-
-def _rm_xrootd(path, recursive):
-    # NB: xrdfs cannot recursively delete directories, so this is not the preferred tool
-    mgm, lfn = split_mgm(path)
-    if _isdir_xrootd(path):
-        if not recursive:
-            raise RuntimeError('{} is a directory but rm instruction is not recursive'.format(path))
-        rm = 'rmdir'
-    else:
-        rm = 'rm'
-    cmd = [ 'xrdfs', mgm, rm, lfn ]
-    run_command(cmd)
-
-def _rm_eos(path, recursive):
-    mgm, lfn = split_mgm(path)
-    if _isdir_xrootd(path):
-        if not recursive:
-            raise RuntimeError('{} is a directory but rm instruction is not recursive'.format(path))
-    cmd = [ 'eos', mgm, 'rm', lfn ]
-    if recursive: cmd.insert(-1, '-r')
-    run_command(cmd)
-
-def stat(path, not_exist_ok=False):
+@cache
+def stat(path, not_exist_ok=False, implementation=None):
     """
     Returns an Inode object for path.
     If not_exist_ok is True and the path doesn't exist, it returns None
     without raising an exception
     """
-    val = read_cache('seutils-cache.stat', path.strip())
-    if val is None:
-        val = _stat_xrootd(path, not_exist_ok) if use_xrootd_path(path) else _stat_gfal(path, not_exist_ok)
-        write_cache('seutils-cache.stat', path.strip(), val)
-    return val
+    path = format(path) # Ensures format
+    cmd = get_command('stat', implementation=implementation, path=path)
+    return cmd(path, not_exist_ok=not_exist_ok)
 
 def stat_function(*args, **kwargs):
     """
@@ -543,259 +557,56 @@ def stat_function(*args, **kwargs):
     """
     return stat(*args, **kwargs)
 
-def _stat_gfal(path, not_exist_ok=False):
-    import datetime
-    cmd = ['gfal-stat', path]
-    output = run_command(cmd, nonzero_exitcode_ok=not_exist_ok)
-    if isinstance(output, int):
-        # The command failed; if output is 2 the path did not exist,
-        # which might be okay if not_exist_ok is True, but other codes
-        # should raise an exception
-        if not_exist_ok and output == 2:
-            logger.info('Stat %s: no such file', path)
-            return None
-        else:
-            raise RuntimeError(
-                'cmd {0} returned exit code {1}'
-                .format(' '.join(cmd), output)
-                )
-    # Interpret the output to create an Inode object
-    size = None
-    modtime = None
-    isdir = None
-    for line in output:
-        line = line.strip()
-        if len(line) == 0:
-            continue
-        elif line.startswith('Size:'):
-            isdir = ('directory' in line)
-            size = int(line.replace('Size:','').strip().split()[0])
-        elif line.startswith('Modify:'):
-            timestamp = line.replace('Modify:','').strip()
-            # Strip off microseconds if they're there
-            if '.' in timestamp: timestamp = timestamp.split('.')[0]
-            modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-    if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
-    if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
-    if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
-    return Inode(path, modtime, isdir, size)
-
-def _stat_xrootd(path, not_exist_ok=False):
-    import datetime
-    mgm, path = split_mgm(path)
-    cmd = [ 'xrdfs', mgm, 'stat', path ]
-    output = run_command(cmd, nonzero_exitcode_ok=not_exist_ok)
-    if isinstance(output, int):
-        # The command failed; if output is 54 the path did not exist,
-        # which might be okay if not_exist_ok is True, but other codes
-        # should raise an exception
-        if not_exist_ok and output == 54:
-            logger.info('Stat %s: no such file', path)
-            return None
-        else:
-            raise RuntimeError(
-                'cmd {0} returned exit code {1}'
-                .format(' '.join(cmd), output)
-                )
-    # Parse output to an Inode instance
-    size = None
-    modtime = None
-    isdir = None
-    for l in output:
-        l = l.strip()
-        if l.startswith('Size:'):
-            size = int(l.split()[1])
-        elif l.startswith('MTime:'):
-            timestamp = l.replace('MTime:', '').strip()
-            modtime = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-        elif l.startswith('Flags:'):
-            isdir = 'IsDir' in l
-    if size is None: raise RuntimeError('Could not extract size from stat:\n{0}'.format(output))
-    if modtime is None: raise RuntimeError('Could not extract modtime from stat:\n{0}'.format(output))
-    if isdir is None: raise RuntimeError('Could not extract isdir from stat:\n{0}'.format(output))
-    return Inode(path, modtime, isdir, size)
-
-def exists(path):
+@cache
+def exists(path, implementation=None):
     """
     Returns a boolean indicating whether the path exists.
     """
-    val = read_cache('seutils-cache.exists', path.strip())
-    if val is None:
-        val = _exists_xrootd(path) if use_xrootd_path(path) else _exists_gfal(path)
-        write_cache('seutils-cache.exists', path.strip(), val)
-    return val
+    return get_command('exists', implementation=implementation, path=path)(path)
 
-def _exists_gfal(path):
-    return get_exitcode(['gfal-stat', path]) == 0
-
-def _exists_xrootd(path):
-    mgm, path = split_mgm(path)
-    cmd = [ 'xrdfs', mgm, 'stat', path ]
-    return get_exitcode(cmd) == 0
-
-def isdir(directory):
+@cache
+def isdir(path, implementation=None):
     """
     Returns a boolean indicating whether the directory exists.
     Also returns False if the passed path is a file.
     """
-    val = read_cache('seutils-cache.isdir', directory.strip())
-    if val is None:
-        val = _isdir_xrootd(directory) if use_xrootd_path(directory) else _isdir_gfal(directory)
-        write_cache('seutils-cache.isdir', directory.strip(), val)
-    return val
+    return get_command('isdir', implementation=implementation, path=path)(path)
 
-def _isdir_gfal(directory):
-    statinfo = _stat_gfal(directory, not_exist_ok=True)
-    if statinfo is None: return False
-    return statinfo.isdir
-
-def _isdir_xrootd(directory):
-    mgm, directory = split_mgm(directory)
-    cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', directory ]
-    return get_exitcode(cmd) == 0
-
-def isfile(path):
+@cache
+def isfile(path, implementation=None):
     """
     Returns a boolean indicating whether the file exists.
     Also returns False if the passed path is a directory.
     """
-    val = read_cache('seutils-cache.isfile', path.strip())
-    if val is None:
-        val = _isfile_xrootd(path) if use_xrootd_path(path) else _isfile_gfal(path)
-        write_cache('seutils-cache.isfile', path.strip(), val)    
-    return val
+    return get_command('isfile', implementation=implementation, path=path)(path)
 
-def _isfile_xrootd(path):
-    mgm, path = split_mgm(path)
-    status = get_exitcode([ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ])
-    # Error code 55 means path exists, but is not a directory
-    return (status == 55)
-
-def _isfile_gfal(path):
-    statinfo = _stat_gfal(path, not_exist_ok=True)
-    if statinfo is None: return False
-    return statinfo.isfile
-
-def is_file_or_dir(path):
+@cache
+def is_file_or_dir(path, implementation=None):
     """
     Returns 0 if path does not exist
     Returns 1 if it's a directory
     Returns 2 if it's a file
     """
-    val = read_cache('seutils-cache.isfileordir', path.strip())
-    if val is None:
-        if is_macos():
-            val = _is_file_or_dir_xrootd_outputbased(path)
-        elif use_xrootd_path(path):
-            val = _is_file_or_dir_xrootd(path)
-        else:
-            val = _is_file_or_dir_gfal(path)
-        write_cache('seutils-cache.isfileordir', path.strip(), val)    
-    return val
+    return get_command('is_file_or_dir', implementation=implementation, path=path)(path)
 
-def _is_file_or_dir_gfal(path):
-    statinfo = _stat_gfal(path, not_exist_ok=True)
-    if statinfo is None:
-        return 0
-    elif statinfo.isdir:
-        return 1
-    elif statinfo.isfile:
-        return 2
-
-def _is_file_or_dir_xrootd(path):
-    mgm, path = split_mgm(path)
-    cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
-    status = get_exitcode(cmd)
-    if status == 0:
-        # Path is a directory
-        return 1
-    elif status == 54:
-        # Path does not exist
-        return 0
-    elif status == 55:
-        # Path is a file
-        return 2
-    else:
-        raise RuntimeError(
-            'Command {0} exitted with code {1}; unknown case'
-            .format(' '.join(cmd), status)
-            )
-
-def _is_file_or_dir_xrootd_outputbased(path):
-    """
-    Mac OS somehow introduces a race condition between the main thread and the xrd polling thread
-    see https://github.com/xrootd/xrootd/issues/1198
-    """
-    from time import sleep
-    sleep(2)
-    mgm, path = split_mgm(path)
-    cmd = [ 'xrdfs', mgm, 'stat', '-q', 'IsDir', path ]
-    output = run_command(cmd, nonzero_exitcode_ok=True, return_output_on_nonzero_exitcode=True)
-    exists = False
-    is_directory = False
-    for line in output:
-        if line.startswith('Flags:'):
-            exists = True
-            if 'IsDir' in line: is_directory = True
-            break
-    if not exists:
-        return 0
-    elif is_directory:
-        return 1
-    else:
-        return 2
-
-def listdir(directory, stat=False, assume_directory=False):
+def listdir(path, stat=False, assume_directory=False, implementation=None):
     """
     Returns the contents of a directory
     If 'assume_directory' is True, it is assumed the user took
     care to pass a path to a valid directory, and no check is performed
     """
-    key = directory.strip() + '___stat{}'.format(stat)
-    val = read_cache('seutils-cache.listdir', key)
-    if not val:
-        if not assume_directory:
-            if not isdir(directory):
-                raise RuntimeError(
-                    '{0} is not a valid directory'
-                    .format(directory)
-                    )
-        val = _listdir_xrootd(directory, stat) if use_xrootd_path(directory) else _listdir_gfal(directory, stat)
-        write_cache('seutils-cache.listdir', key, val)
-    return val
+    if not(assume_directory) and not isdir(path):
+        raise Exception('{0} is not a directory'.format(path))
+    cmd = get_command('listdir', implementation=implementation, path=path)
+    return cmd(path, stat)
 
-def _listdir_xrootd(directory, stat=False):
-    mgm, path = split_mgm(directory)
-    cmd = [ 'xrdfs', mgm, 'ls', path ]
-    if stat: cmd.append('-l')
-    output = run_command(cmd)
-    contents = []
-    for l in output:
-        l = l.strip()
-        if not len(l): continue
-        if stat:
-            contents.append(Inode.from_statline_xrootd(l, mgm))
-        else:
-            contents.append(format(l, mgm))
-    return contents
+# Custom cache key generator dependent on whether stat was True or False
+def _listdir_keygen(path, stat=False, *args, **kwargs):
+    return path.strip() + '___stat{}'.format(stat)
+listdir.keygen = _listdir_keygen
+listdir = cache(listdir)
 
-def _listdir_gfal(directory, stat=False):
-    cmd = [ 'gfal-ls', format(directory) ]
-    if stat: cmd.append('-l')
-    output = run_command(cmd)
-    contents = []
-    for l in output:
-        l = l.strip()
-        if not len(l): continue
-        if stat:
-            contents.append(Inode.from_statline_gfal(l, directory))
-        else:
-            contents.append(format(osp.join(directory, l)))
-    return contents
-
-N_COPY_RETRIES = 0
-
-def cp(src, dst, method='auto', **kwargs):
+def cp(src, dst, implementation=None, **kwargs):
     """
     Copies a file `src` to the storage element.
     Does not format `src` or `dst`; user is responsible for formatting.
@@ -803,46 +614,12 @@ def cp(src, dst, method='auto', **kwargs):
     The method can be 'auto', 'xrdcp', or 'gfal-copy'. If 'auto', a heuristic
     will be applied to determine whether to best use xrdcp or gfal-copy.
     """
-    logger.warning('Copying %s --> %s', src, dst)
-    methods = {
-        'xrdcp' : _cp_xrdcp,
-        'gfal-copy' : _cp_gfal,
-        }
-    # Heuristic to determine what copy method to use
-    if method == 'auto':
-        for file in [src, dst]:
-            if has_protocol(file):
-                if use_xrootd_path(file):
-                    method = 'xrdcp'
-                else:
-                    method = 'gfal-copy'
-                break
-        else:
-            logger.debug(
-                'No protocols specified in either src ({0}) or dst ({1}); using xrdcp'
-                .format(src, dst)
-                )
-            method = 'xrdcp'
-    # Execute the copy method
-    try:
-        methods[method](src, dst, **kwargs)
-    except KeyError:
-        logger.error('Method %s is not a valid copying method!', method)
-        raise
+    logger.warning('Copying %s --> %s', src, dst)    
+    cmd = get_command('cp', implementation=implementation, path=dst if has_protocol(dst) else src)
+    cmd(src, dst, **kwargs)
 
-def _cp_xrdcp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
-    cmd = [ 'xrdcp', src, dst ]
-    if not verbose: cmd.insert(1, '-s')
-    if create_parent_directory: cmd.insert(1, '-p')
-    if force: cmd.insert(1, '-f')
-    run_command(cmd, n_retries=n_retries)
-
-def _cp_gfal(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
-    cmd = [ 'gfal-copy', '-t', '180', src, dst ]
-    if create_parent_directory: cmd.insert(1, '-p')
-    if verbose: cmd.insert(1, '-v')
-    if force: cmd.insert(1, '-f')
-    run_command(cmd, n_retries=n_retries)
+# _______________________________________________________
+# Algorithms that use the SE interaction implementation, but are agnostic to the underlying tool
 
 def cp_to_se(src, dst, **kwargs):
     """
@@ -855,10 +632,6 @@ def cp_from_se(src, dst, **kwargs):
     Like cp, but assumes src is a location on a storage element and dst is local
     """
     cp(format(src), dst, **kwargs)
-
-
-# _______________________________________________________
-# Algorithms that use the SE interactions
 
 MAX_RECURSION_DEPTH = 20
 

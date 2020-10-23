@@ -2,6 +2,20 @@ import math, datetime, os.path as osp
 import seutils
 from seutils import logger, debug, run_command, is_string, split_mgm
 
+IS_INSTALLED = None
+def is_installed():
+    """
+    Checks whether the python bindings of XRootD are importable
+    """
+    global IS_INSTALLED
+    if IS_INSTALLED is None:
+        try:
+            import XRootD
+            IS_INSTALLED = True
+        except ImportError:
+            IS_INSTALLED = False
+    return IS_INSTALLED
+
 _FILESYSTEMCACHE = {}
 def get_client(mgm):
     global _FILESYSTEMCACHE
@@ -26,7 +40,8 @@ FLAGVALS = list(range(7))
 _FLAGVALS_PREPARED = False
 def read_statinfoflagenum():
     """
-    StatInfoFlags is an enum with 2^n values
+    StatInfoFlags is an enum with 2^n values; transform it to an ordinary
+    python list
     """
     global FLAGVALS, _FLAGVALS_PREPARED
     if not _FLAGVALS_PREPARED:
@@ -40,7 +55,6 @@ def read_statinfoflagenum():
         FLAGVALS[log(client.flags.StatInfoFlags.POSC_PENDING)] = 'POSC_PENDING'
         FLAGVALS[log(client.flags.StatInfoFlags.IS_READABLE)] = 'IS_READABLE'
         FLAGVALS[log(client.flags.StatInfoFlags.IS_WRITABLE)] = 'IS_WRITABLE'
-        print(FLAGVALS)
 
 def statinfoflag_to_flags(flag):
     """
@@ -100,6 +114,19 @@ def stat(path, not_exist_ok=False):
         else:
             raise Exception(msg)
     return statinfo_to_inode(path, statinfo)
+
+def exists(path):
+    inode = stat(path, not_exist_ok=True)
+    return not(inode is None)
+
+def is_file_or_dir(path):
+    inode = stat(path, not_exist_ok=True)
+    if inode is None:
+        return 0
+    elif inode.isdir:
+        return 1
+    else:
+        return 2
 
 def isdir(directory):
     return stat(directory).isdir
