@@ -58,13 +58,14 @@ def is_string(string):
 
 N_SECONDS_SLEEP = 10
 
-def run_command(cmd, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_output_on_nonzero_exitcode=False):
+def run_command(cmd, env=None, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_output_on_nonzero_exitcode=False):
     """
     Runs a command and captures output. Raises an exception on non-zero exit code,
     except if nonzero_exitcode_ok is set to True.
     """
     i_attempt = 0
     if dry is None: dry = DRYMODE
+    if env is None: env = ENV
     while True:
         logger.info('%sIssuing command (attempt %s: %s)', '(dry) ' if dry else '', i_attempt, ' '.join(cmd))
         if dry: return ''
@@ -72,6 +73,7 @@ def run_command(cmd, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_ou
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env=env,
             universal_newlines=True,
             )
         # Start running command and capturing output
@@ -101,17 +103,18 @@ def run_command(cmd, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_ou
                     raise subprocess.CalledProcessError(cmd, returncode)
         return output
 
-def get_exitcode(cmd):
+def get_exitcode(cmd, env=None):
     """
     Runs a command and returns the exit code.
     """
+    if env is None: env = ENV
     if is_string(cmd): cmd = [cmd]
     logger.debug('Getting exit code for "%s"', ' '.join(cmd))
     if DRYMODE:
         returncode = 0
     else:
         FNULL = open(os.devnull, 'w')
-        process = subprocess.Popen(cmd, stdout=FNULL, stderr=subprocess.STDOUT)
+        process = subprocess.Popen(cmd, stdout=FNULL, stderr=subprocess.STDOUT, env=env)
         process.communicate()[0]
         returncode = process.returncode
     logger.debug('Got exit code %s', returncode)
@@ -513,13 +516,46 @@ def best_implementation_heuristic(cmd_name, path=None):
     logger.info('Using module %s to execute \'%s\' (path: %s)', preferred_order[0].__name__, cmd_name, path)
     return preferred_order
 
+ENV = None
+def set_env(env):
+    """
+    Sets the env in which command line arguments are ran by default
+    """
+    global ENV
+    ENV = env
+
+@contextmanager
+def env_context(env):
+    """
+    Temporarily sets an environment, and then reverts to the old environment
+    """
+    global ENV
+    old_ENV = ENV
+    ENV = env
+    try:
+        yield None
+    finally:
+        ENV = old_ENV
+
+def add_env_kwarg(fn):
+    """
+    Function decorator that gives the function the `env` keyword argument
+    """
+    def wrapper(*args, **kwargs):
+        if 'env' in kwargs:
+            with env_context(kwargs.pop('env')):
+                return fn(*args, **kwargs)
+        else:
+            return fn(*args, **kwargs)
+    return wrapper
 
 # _______________________________________________________
 # Actual interactions with SE
 # The functions below are just wrappers for the actual implementations in
 # separate modules. All functions have an `implementation` keyword; If set
-# to None, and the 'best' implementation is guessed.
+# to None, the 'best' implementation is guessed.
 
+@add_env_kwarg
 def mkdir(path, implementation=None):
     """
     Creates a directory on the SE
@@ -530,6 +566,7 @@ def mkdir(path, implementation=None):
     cmd = get_command('mkdir', implementation=implementation, path=path)
     cmd(path)
 
+@add_env_kwarg
 def rm(path, recursive=False, implementation=None):
     """
     Creates a path on the SE
@@ -540,6 +577,7 @@ def rm(path, recursive=False, implementation=None):
     cmd = get_command('rm', implementation=implementation, path=path)
     cmd(path, recursive=recursive)
 
+@add_env_kwarg
 @cache
 def stat(path, not_exist_ok=False, implementation=None):
     """
@@ -551,12 +589,14 @@ def stat(path, not_exist_ok=False, implementation=None):
     cmd = get_command('stat', implementation=implementation, path=path)
     return cmd(path, not_exist_ok=not_exist_ok)
 
+@add_env_kwarg
 def stat_function(*args, **kwargs):
     """
     Alternative name for the stat function, since stat is also an often used keyword in functions
     """
     return stat(*args, **kwargs)
 
+@add_env_kwarg
 @cache
 def exists(path, implementation=None):
     """
@@ -564,6 +604,7 @@ def exists(path, implementation=None):
     """
     return get_command('exists', implementation=implementation, path=path)(path)
 
+@add_env_kwarg
 @cache
 def isdir(path, implementation=None):
     """
@@ -572,6 +613,7 @@ def isdir(path, implementation=None):
     """
     return get_command('isdir', implementation=implementation, path=path)(path)
 
+@add_env_kwarg
 @cache
 def isfile(path, implementation=None):
     """
@@ -580,6 +622,7 @@ def isfile(path, implementation=None):
     """
     return get_command('isfile', implementation=implementation, path=path)(path)
 
+@add_env_kwarg
 @cache
 def is_file_or_dir(path, implementation=None):
     """
@@ -589,6 +632,7 @@ def is_file_or_dir(path, implementation=None):
     """
     return get_command('is_file_or_dir', implementation=implementation, path=path)(path)
 
+@add_env_kwarg
 def listdir(path, stat=False, assume_directory=False, implementation=None):
     """
     Returns the contents of a directory
