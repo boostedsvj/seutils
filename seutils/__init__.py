@@ -650,6 +650,7 @@ def _listdir_keygen(path, stat=False, *args, **kwargs):
 listdir.keygen = _listdir_keygen
 listdir = cache(listdir)
 
+@add_env_kwarg
 def cp(src, dst, implementation=None, **kwargs):
     """
     Copies a file `src` to the storage element.
