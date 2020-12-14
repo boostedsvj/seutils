@@ -1,4 +1,5 @@
 import seutils
+import os.path as osp
 from seutils import run_command, get_exitcode, Inode, split_mgm, N_COPY_RETRIES
 logger = seutils.logger
 
