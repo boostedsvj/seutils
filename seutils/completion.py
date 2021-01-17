@@ -47,7 +47,9 @@ def complete_ls(cmd, prev_word, curr_word, line):
 
     log('Raw lfn %s', raw_lfn)
     # Do some formatting
-    if not seutils.has_protocol(raw_lfn):
+    if seutils.is_ssh(raw_lfn):
+        lfn = raw_lfn
+    elif not seutils.has_protocol(raw_lfn):
         if seutils.DEFAULT_MGM is None:
             cannot_expand()
             return

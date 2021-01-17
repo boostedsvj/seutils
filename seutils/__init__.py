@@ -174,6 +174,9 @@ def has_protocol(filename):
     """
     return ('://' in filename)
 
+def is_ssh(path):
+    return (':/' in path and not('://' in path))
+
 def split_protocol_pfn(filename):
     """
     Splits protocol, server and logical file name from a physical file name.
@@ -270,6 +273,7 @@ def format(path, mgm=None):
     - Path starting with 'root:' and an mgm - an exception is thrown in case of conflict
     - Path starting with '/' and an mgm - mgm and path are joined
     """
+    if is_ssh(path): return path
     mgm, lfn = split_mgm(path, mgm=mgm)
     return _join_mgm_lfn(mgm, lfn)
 
@@ -445,7 +449,8 @@ from . import xrd
 from . import pyxrd
 from . import gfal
 from . import eos
-_implementations = [ xrd, pyxrd, gfal, eos ]
+from . import ssh
+_implementations = [ xrd, pyxrd, gfal, eos, ssh ]
 
 def get_implementation(name):
     """
@@ -491,6 +496,11 @@ def best_implementation_heuristic(cmd_name, path=None):
     - If the path does not start with root://, it's safer to use gfal
     - For root://-starting paths, use xrootd
     """
+    # Shortcut for ssh
+    if path and is_ssh(path):
+        logger.debug('Path is ssh-like')
+        return [ssh]
+    # Grid protocols
     preferred_order = []
     def check(module):
         if module.is_installed() and hasattr(module, cmd_name) and not(module in preferred_order):
@@ -698,7 +708,6 @@ def ls(path, stat=False, assume_directory=False, no_expand_directory=False):
     a formatted path to the directory is returned (similar to unix's ls -d)
     """
     path = format(path)
-    protocol = get_protocol(path)
     if assume_directory:
         status = 1
     else:
@@ -884,6 +893,7 @@ def cli_detect_fnal():
         set_default_mgm(mgm)
 
 def cli_flexible_format(lfn, mgm=None):
+    if is_ssh(lfn): return lfn
     cli_detect_fnal()
     if not has_protocol(lfn) and not lfn.startswith('/'):
         try:
