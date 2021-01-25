@@ -128,11 +128,11 @@ def is_file_or_dir(path):
     else:
         return 2
 
-def isdir(directory):
-    return stat(directory).isdir
+def isdir(path):
+    return is_file_or_dir(path) == 1
 
-def isfile(directory):
-    return stat(directory).isfile
+def isfile(path):
+    return is_file_or_dir(path) == 2
 
 def listdir(path, stat=False, assume_directory=False):
     from XRootD import client

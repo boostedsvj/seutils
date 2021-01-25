@@ -22,7 +22,7 @@ def _lsstatline_to_inode(l, server, parent_path):
     import datetime
     components = l.strip().split()
     isdir = components[0].startswith('d')
-    timestamp = ' '.join(components[5:-1])
+    timestamp = ' '.join(components[5:8])
     try:
         modtime = datetime.datetime.strptime(timestamp, '%b %d %H:%M')
     except ValueError:
