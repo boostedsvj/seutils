@@ -103,3 +103,31 @@ def rm(path, recursive=False):
     server, path = _split_remote(directory)
     cmd = [ 'ssh', server, 'rm {1} {0}'.format(path, '-rf' if recursive else '') ]
     run_command(cmd)
+
+
+# _________________________________
+
+def listdir_recursive(path):
+    """
+    Specific for ssh: Flat list of all files in a remote directory
+    """
+    server, lpath = _split_remote(path)
+    cmd = [ 'ssh', server, 'find {0} -printf \'%y %s %A@ %p\n\''.format(lpath) ]
+    logger.info('Gathering all inodes recursively in %s', path)
+    output = run_command(cmd)
+    contents = []
+    for l in output:
+        l = l.strip()
+        if not len(l): continue
+        if not(l.startswith('d') or l.startswith('-')): continue
+        contents.append(_findline_to_inode(l, server))
+    return contents
+
+def _findline_to_inode(line, server):
+    import datetime
+    components = line.strip().split()
+    path = server + ':' + ' '.join(components[3:])
+    isdir = components[0] == 'd'
+    size = int(components[1])
+    modtime = datetime.datetime.fromtimestamp(float(components[2]))
+    return Inode(path, modtime, isdir, size)
