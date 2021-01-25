@@ -21,11 +21,6 @@ def _split_remote(path):
 def _lsstatline_to_inode(l, server, parent_path):
     import datetime
     components = l.strip().split()
-    if not len(components) == 9:
-        raise Exception(
-            'Expected 9 components for stat line:\n{0}'
-            .format(l)
-            )
     isdir = components[0].startswith('d')
     timestamp = ' '.join(components[5:-1])
     try:
@@ -40,7 +35,7 @@ def _lsstatline_to_inode(l, server, parent_path):
                 )
             raise
     size = int(components[4])
-    path = server + ':' + osp.join(parent_path, components[-1])
+    path = server + ':' + osp.join(parent_path, ' '.join(components[8:]))
     return Inode(path, modtime, isdir, size)
 
 def cp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
