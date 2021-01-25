@@ -119,7 +119,7 @@ def listdir_recursive(path):
     for l in output:
         l = l.strip()
         if not len(l): continue
-        if not(l.startswith('d') or l.startswith('-')): continue
+        if not(l.startswith('d') or l.startswith('f')): continue
         contents.append(_findline_to_inode(l, server))
     return contents
 
