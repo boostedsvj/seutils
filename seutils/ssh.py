@@ -42,9 +42,10 @@ def cp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose
     cmd = [ 'scp', src, dst ]
     if verbose: cmd.insert(1, '-v')
     if create_parent_directory:
+        parent_dir = osp.dirname(dst)
         if _is_remote(dst):
-            mkdir(osp.dirname(dst))
-        else:
+            mkdir(parent_dir)
+        elif not osp.isdir(parent_dir):
             os.makedirs(osp.dirname(dst))
     run_command(cmd, n_retries=n_retries)
 
