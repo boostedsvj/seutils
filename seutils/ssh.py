@@ -1,4 +1,4 @@
-import seutils
+import seutils, os
 from seutils import run_command, get_exitcode, Inode, split_mgm, N_COPY_RETRIES
 import os.path as osp
 logger = seutils.logger
@@ -42,8 +42,10 @@ def cp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose
     cmd = [ 'scp', src, dst ]
     if verbose: cmd.insert(1, '-v')
     if create_parent_directory:
-        # FIXME: mkdir command here
-        pass
+        if _is_remote(dst):
+            mkdir(osp.dirname(dst))
+        else:
+            os.makedirs(osp.dirname(dst))
     run_command(cmd, n_retries=n_retries)
 
 def listdir(directory, stat=False):
