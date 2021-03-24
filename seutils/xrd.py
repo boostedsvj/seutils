@@ -156,3 +156,7 @@ def rm(path, recursive):
 def mkdir(directory):
     mgm, directory = split_mgm(directory)
     run_command([ 'xrdfs', mgm, 'mkdir', '-p', directory ])
+
+def cat(path):
+    mgm, path = split_mgm(path)
+    return ''.join(run_command([ 'xrdfs', mgm, 'cat', path ]))

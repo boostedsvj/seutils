@@ -8,19 +8,13 @@ parser.add_argument('-t', '--tree', type=str, help='Name of the tree to count', 
 args = parser.parse_args()
 
 def main():
-    for treename, n_entries, branches in seutils.root.iter_branches(args.rootfile):
+    for treepath, counts, branches in seutils.root.trees_and_counts(args.rootfile, branches=True):
         print(
             '\033[31mTTree {0} ({1} entries)\033[0m'
-            .format(treename, n_entries)
+            .format(treepath, counts)
             )
-        for branch, level in branches:
-            print(
-                '{indent}{branch_name}'
-                .format(
-                    indent=level*'  ',
-                    branch_name=branch.GetName()
-                    )
-                )
+        for b in branches:
+            print('   ', b)
 
 if __name__ == '__main__':
     main()

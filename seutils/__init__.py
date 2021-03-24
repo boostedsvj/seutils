@@ -465,7 +465,7 @@ def get_implementation(name):
 
 _commands = [
     'mkdir', 'rm', 'stat', 'exists', 'isdir',
-    'isfile', 'is_file_or_dir', 'listdir', 'cp',
+    'isfile', 'is_file_or_dir', 'listdir', 'cp', 'cat'
     ]
 
 def get_command(cmd_name, implementation=None, path=None):
@@ -505,14 +505,15 @@ def best_implementation_heuristic(cmd_name, path=None):
     def check(module):
         if module.is_installed() and hasattr(module, cmd_name) and not(module in preferred_order):
             preferred_order.append(module)
-    check(pyxrd)
     # If this concerns removal, eos is the only tool that can do recursive directory removal:
     if cmd_name == 'rm': check(eos)
     # If path starts with root://, prefer xrd over gfal, otherwise the other way around
     if not(path is None) and get_protocol(path) != 'root':
         check(gfal)
+        check(pyxrd)
         check(xrd)
     else:
+        check(pyxrd)
         check(xrd)
         check(gfal)
     # Prefer eos last
@@ -672,6 +673,16 @@ def cp(src, dst, implementation=None, **kwargs):
     logger.warning('Copying %s --> %s', src, dst)    
     cmd = get_command('cp', implementation=implementation, path=dst if has_protocol(dst) else src)
     cmd(src, dst, **kwargs)
+
+@add_env_kwarg
+def cat(path, implementation=None):
+    """
+    Returns the contents of a directory
+    If 'assume_directory' is True, it is assumed the user took
+    care to pass a path to a valid directory, and no check is performed
+    """
+    cmd = get_command('cat', implementation=implementation, path=path)
+    return cmd(path)
 
 # _______________________________________________________
 # Algorithms that use the SE interaction implementation, but are agnostic to the underlying tool
@@ -910,5 +921,4 @@ def cli_flexible_format(lfn, mgm=None):
 # _______________________________________________________
 # root utils extension
 
-from . import rootutils as root
-from . import pyxrd
+from . import root

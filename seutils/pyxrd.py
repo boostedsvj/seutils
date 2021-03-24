@@ -1,4 +1,4 @@
-import math, datetime, os.path as osp
+import math, datetime, os.path as osp, sys
 import seutils
 from seutils import logger, debug, run_command, is_string, split_mgm
 
@@ -103,9 +103,9 @@ def stat(path, not_exist_ok=False):
     """
     """
     import XRootD
-    mgm, path = split_mgm(path)
+    mgm, lpath = split_mgm(path)
     filesystem = get_client(mgm)
-    status, statinfo = filesystem.stat(path)
+    status, statinfo = filesystem.stat(lpath)
     if not status.ok:
         msg = 'stat: Could not access {0}: status {1}'.format(path, status)
         if not_exist_ok:
@@ -157,3 +157,13 @@ def listdir(path, stat=False, assume_directory=False):
         else:
             contents.append(itempath)
     return contents
+
+def cat(path):
+    from XRootD import client
+    with client.File() as f:
+        f.open(path)
+        output = b''.join(f.readlines())
+        if sys.version_info < (3,):
+            return output
+        else:
+            return output.decode()

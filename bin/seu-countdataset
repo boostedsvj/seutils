@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import seutils
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    'lfn', type=str,
+    help='Path of file to be cat\'ed.'
+    )
+parser.add_argument(
+    '-f', '--force', action='store_true',
+    help='Forces a recount of events (i.e. cache is ignored)'
+    )
+args = parser.parse_args()
+
+def main():
+    lfn = seutils.cli_flexible_format(args.lfn, seutils.cli_detect_fnal())
+    output = seutils.root.count_dataset(lfn)
+
+    # Compute the tree total counts
+    tree_totals = {}
+    for rootfile, values in output.items():
+        for key, value in values.items():
+            if key == '_mtime': continue
+            tree_totals.setdefault(key, 0)
+            tree_totals[key] += value
+
+    for tree, count in sorted(tree_totals.items()):
+        print(
+            '\033[31mTTree {0} ({1} entries)\033[0m'
+            .format(tree, count)
+            )
+        for rootfile, entry in sorted(output.items()):
+            print('  {:6d}: {}'.format(entry[tree], rootfile))
+
+
+if __name__ == '__main__':
+    main()
