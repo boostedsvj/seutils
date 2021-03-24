@@ -186,6 +186,21 @@ def count_dataset(directory, read_cache=True, write_cache=True, rootfiles=None):
             )
     return cache
 
+def sum_dataset(directory, treepath=None, **kwargs):
+    '''
+    Returns only the sums of all entries
+    If treepath is specified it returns a single int,
+    otherwise it returns a dict of { treepath : count }
+    '''
+    output = count_dataset(directory, **kwargs)
+    # Compute the tree total counts
+    tree_totals = {}
+    for rootfile, values in output.items():
+        for key, value in values.items():
+            if key == '_mtime': continue
+            tree_totals.setdefault(key, 0)
+            tree_totals[key] += value
+    return tree_totals if treepath is None else tree_totals[treepath]
 
 def select_most_likely_tree(trees):
     """
