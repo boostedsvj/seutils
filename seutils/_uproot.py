@@ -25,14 +25,17 @@ def open_root(path, mode='READ'):
     '''
     do_open = seutils.is_string(path)
     try:
+        yieldable = path
         if do_open:
             import uproot
-            f = uproot.open(path)
-            yield f
-        else:
-            yield path
+            yieldable = uproot.open(path)
+        yield yieldable
     finally:
-        if do_open: f.close()
+        if do_open:
+            try:
+                f.close()
+            except Exception:
+                pass
 
 def trees(rootfile):
     with open_root(rootfile) as f:

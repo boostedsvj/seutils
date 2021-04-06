@@ -8,13 +8,13 @@ import tempfile
 from seutils import add_env_kwarg
 
 from . import pyroot
-from . import uproot
+from . import _uproot
 
 
 # _______________________________________________________
 # Get commands
 
-_implementations = [ uproot, pyroot ]
+_implementations = [ _uproot, pyroot ]
 _commands = [ 'trees', 'trees_and_counts', 'branches', 'iter_branches' ]
 
 def get_implementation(name):
@@ -58,7 +58,7 @@ def best_implementation_heuristic(cmd_name):
     def check(module):
         if module.is_installed() and hasattr(module, cmd_name) and not(module in preferred_order):
             preferred_order.append(module)
-    check(uproot)
+    check(_uproot)
     check(pyroot)
     if not len(preferred_order):
         raise Exception(

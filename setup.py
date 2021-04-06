@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name          = 'seutils',
-    version       = '0.59',
+    version       = '0.60',
     license       = 'BSD 3-Clause License',
     description   = 'Description text',
     url           = 'https://github.com/tklijnsma/seutils.git',
