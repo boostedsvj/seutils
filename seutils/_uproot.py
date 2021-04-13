@@ -57,8 +57,8 @@ def branches(rootfile, treepath=None):
     with open_root(rootfile) as f:
         if treepath is None:
             treepath = seutils.root.select_most_likely_tree(trees(f))
-            tree = f[treepath]
-            for key in tree.keys(recursive=True):
-                value = tree[key]
-                return (value, 1)
+        tree = f[treepath]
+        for key in tree.keys(recursive=True):
+            value = tree[key]
+            yield (value, 1)
 
