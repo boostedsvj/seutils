@@ -5,9 +5,11 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('lfns', type=str, nargs='*', help='LFNs to be formatted')
 parser.add_argument('-m', '--mgm', type=str, help='MGM to be used')
+parser.add_argument('-v', '--verbose', action='store_true', help='Increases verbosity')
 args = parser.parse_args()
 
 def main():
+    if args.verbose: seutils.debug()
     mgm = args.mgm if args.mgm else None
     seutils.cli_detect_fnal() # Set fnal mgm as fall back
     for lfn in args.lfns:
