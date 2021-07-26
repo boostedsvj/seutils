@@ -5,6 +5,9 @@ import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('lfns', type=str, nargs='*', help='LFNs to be formatted')
 parser.add_argument('-v', '--verbose', action='store_true', help='Increases verbosity')
+parser.add_argument('-l', '--long', action='store_true', help='Include mtime and size in the output')
+parser.add_argument('-s', '--sort', type=str, choices=['name', 'date', 'size'], default='name',
+    help='Only works if -l is passed as well. Possibility to sort the output by date or size as well')
 args = parser.parse_args()
 
 def main():
@@ -13,10 +16,25 @@ def main():
     for lfn in args.lfns:
         lfn = seutils.cli_flexible_format(lfn)
         if '*' in lfn:
-            output = seutils.ls_wildcard(lfn)
+            output = seutils.ls_wildcard(lfn, stat=args.long)
         else:
-            output = seutils.ls(lfn)
-        print('\n'.join(output))
+            output = seutils.ls(lfn, stat=args.long)
+        if args.long:
+            if args.sort == 'date':
+                output.sort(key=lambda inode: inode.modtime, reverse=True)
+            elif args.sort == 'size':
+                output.sort(key=lambda inode: -inode.size)
+            for inode in output:
+                print(
+                    '{}  {:<8}  {}'
+                    .format(
+                        inode.modtime.strftime('%Y-%m-%d %H:%M'),
+                        inode.size_human,
+                        inode.path
+                        )
+                    )
+        else:
+            print('\n'.join(output))
 
 if __name__ == '__main__':
     main()
