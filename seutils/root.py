@@ -225,7 +225,6 @@ def select_most_likely_tree(trees):
         )
     return tree
 
-
 def nentries(rootfile, treepath=None, **kwargs):
     '''
     Like count_dataset, but for a single file.
@@ -233,7 +232,5 @@ def nentries(rootfile, treepath=None, **kwargs):
     '''
     directory = osp.dirname(rootfile)
     kwargs['rootfiles'] = [rootfile]
-    entry = count_dataset(osp.dirname(rootfile), **kwargs)
+    entry = list(count_dataset(osp.dirname(rootfile), **kwargs).values())[0]
     return entry if treepath is None else entry[treepath]
-
-

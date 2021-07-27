@@ -918,6 +918,18 @@ def cli_flexible_format(lfn, mgm=None):
     else:
         return format(lfn, mgm)
 
+def cli_expand_lfns(raw_lfns):
+    # First preprocess any wildcards
+    lfns = []
+    for lfn in raw_lfns:
+        if '*' in lfn:
+            lfns.extend(ls_wildcard(lfn))
+        else:
+            lfns.append(lfn)
+    # Format once more to be sure everything is a proper lfn
+    lfns = [cli_flexible_format(lfn, cli_detect_fnal()) for lfn in lfns]
+    return lfns
+
 # _______________________________________________________
 # root utils extension
 

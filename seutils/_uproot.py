@@ -48,7 +48,7 @@ def _make_str(s):
         return s.decode()
     return s
 
-def _iter_trees(f, prefix='', seen=None):
+def _iter_trees(f, prefix='', seen=None, depth=0):
     # Keep a memo of seen memory addresses to avoid double counting
     if seen is None: seen = set()
     if id(f) in seen: return
@@ -65,7 +65,7 @@ def _iter_trees(f, prefix='', seen=None):
     classname = repr(f)
     if classname.startswith('<ROOTDirectory') or classname.startswith('<ReadOnlyDirectory'):
         for value in f.values():
-            yield from _iter_trees(value, prefix=name + '/', seen=seen)
+            yield from _iter_trees(value, prefix=name + '/' if depth>0 else '', seen=seen, depth=depth+1)
     elif classname.startswith('<TTree'):
         yield name, f
 
