@@ -63,9 +63,16 @@ def _iter_trees(f, prefix='', seen=None, depth=0):
             name = '/'.join([_make_str(p) for p in f.path])
     name = prefix + name.rsplit('/',1)[-1]
     classname = repr(f)
-    if classname.startswith('<ROOTDirectory') or classname.startswith('<ReadOnlyDirectory'):
+    if classname.startswith('<ROOTDirectory') \
+        or classname.startswith('<ReadOnlyDirectory'):
         for value in f.values():
-            yield from _iter_trees(value, prefix=name + '/' if depth>0 else '', seen=seen, depth=depth+1)
+            # `yield from` is python 3 only
+            for _ in _iter_trees(
+                value,
+                prefix=name + '/' if depth>0 else '',
+                seen=seen, depth=depth+1
+                ):
+                yield _
     elif classname.startswith('<TTree'):
         yield name, f
 
