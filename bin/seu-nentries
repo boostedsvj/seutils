@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import seutils
-import argparse
 import os.path as osp
 
 parser = seutils.ParserMultipleLFNs()
@@ -9,6 +8,10 @@ parser.add_argument('-t', '--tree', type=str, help='Name of the tree to count')
 parser.add_argument(
     '-f', '--force', action='store_true',
     help='Forces a recount of events (i.e. cache is ignored)'
+    )
+parser.add_argument(
+    '-n', '--nocache', action='store_true',
+    help='Disables using the cache (both reading and writing)'
     )
 args = parser.parse_args()
 
@@ -19,9 +22,19 @@ def main():
         if dirname not in per_dirname: per_dirname[dirname] = []
         per_dirname[dirname].append(rootfile)
 
+    if args.nocache:
+        read_cache = False
+        write_cache = False
+    else:
+        read_cache = not(args.force)
+        write_cache = True
+
     counts_per_tree = {}
     for dirname, rootfiles_in_dir in per_dirname.items():
-        counts_per_rootfile = seutils.root.count_dataset(dirname, rootfiles=rootfiles_in_dir, read_cache=not(args.force))
+        counts_per_rootfile = seutils.root.count_dataset(
+            dirname, rootfiles=rootfiles_in_dir,
+            read_cache=read_cache, write_cache=write_cache
+            )
         for rootfile, counts in counts_per_rootfile.items():
             print(rootfile)
             for tree, count in counts.items():
