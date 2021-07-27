@@ -43,34 +43,51 @@ def trees(rootfile):
         return [ k.rsplit(';',1)[0] for k, v in sorted(f.items()) if repr(v).startswith('<TTree') ]
 
 
-def _iter_key_value_pairs(f, prefix=''):
-    name = f.name
-    if sys.version_info[0] > 2: name = name.decode()
+def _make_str(s):
+    if sys.version_info[0] >= 3 and isinstance(s, bytes):
+        return s.decode()
+    return s
+
+def _iter_trees(f, prefix='', seen=None):
+    # Keep a memo of seen memory addresses to avoid double counting
+    if seen is None: seen = set()
+    if id(f) in seen: return
+    seen.add(id(f))
+    # Get a name; some 2/3 and uproot version compatibility issues here
+    try:
+        name = _make_str(f.name)
+    except AttributeError:
+        if len(f.path) == 0:
+            name = ''
+        else:
+            name = '/'.join([_make_str(p) for p in f.path])
     name = prefix + name.rsplit('/',1)[-1]
-    print(name, f)
     classname = repr(f)
-    if classname.startswith('<ROOTDirectory'):
+    if classname.startswith('<ROOTDirectory') or classname.startswith('<ReadOnlyDirectory'):
         for value in f.values():
-            yield from _iter_key_value_pairs(value, prefix=name + '/')
+            yield from _iter_trees(value, prefix=name + '/', seen=seen)
     elif classname.startswith('<TTree'):
         yield name, f
-
-def _format_key_value_pair(treename, tree):
-    treename = treename.rsplit(';',1)[0]
-    try:
-        numentries = tree.num_entries
-        branches = [b.name for b in tree.branches]
-    except AttributeError:
-        numentries = tree.numentries
-        branches = list(tree.keys())
-        if sys.version_info[0] > 2: branches = [b.decode() for b in branches]
-    return (treename, numentries, branches) if branches else (treename, numentries)
 
 def trees_and_counts(rootfile, branches=False):
     r = []
     with open_root(rootfile) as f:
-        for key, value in sorted(_iter_key_value_pairs(f)):
-            r.append(_format_key_value_pair(key, value))
+        for treename, tree in sorted(_iter_trees(f)):
+            treename = treename.rsplit(';',1)[0]
+            # Some uproot version incompatibilities
+            try:
+                numentries = tree.num_entries
+            except AttributeError:
+                numentries = tree.numentries
+            if branches:
+                try:
+                    branches_ = [_make_str(b.name) for b in tree.branches]
+                except AttributeError:
+                    branches_ = [_make_str(k) for k in tree.keys()]
+            r.append(
+                (treename, numentries, branches_)
+                if branches else (treename, numentries)
+                )
     return r
 
 
