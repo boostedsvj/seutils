@@ -34,7 +34,7 @@ def open_root(path, mode='READ'):
     finally:
         if do_open:
             try:
-                f.close()
+                yieldable.close()
             except Exception:
                 pass
 

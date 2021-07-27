@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, glob, shutil, time, datetime
+import logging, subprocess, os, glob, shutil, time, datetime, argparse
 from contextlib import contextmanager
 
 DEFAULT_LOGGING_LEVEL = logging.WARNING
@@ -896,6 +896,42 @@ def ls_wildcard(pattern, stat=False):
 
 # _______________________________________________________
 # Command line helpers
+
+class Parser:
+    """
+    Very thin wrapper class for argparse.ArgumentParser with some options
+    used for every command line tool in seutils
+    """
+    def __init__(self, *args, **kwargs):
+        self.parser = argparse.ArgumentParser(*args, **kwargs)
+        self.parser.add_argument('-v', '--verbose', action='store_true', help='Increases verbosity')
+        self.parser.add_argument('-d', '--dry', action='store_true', help='Does not actually run any commands')
+
+    def add_argument(self, *args, **kwargs):
+        self.parser.add_argument(*args, **kwargs)
+
+    def parse_args(self, *args, **kwargs):
+        parsed_args = self.parser.parse_args(*args, **kwargs)
+        if parsed_args.verbose: debug()
+        if parsed_args.dry: drymode()
+        return parsed_args
+
+class ParserMultipleLFNs(Parser):
+    """
+    Like ArgumentParser, but includes a multiple LFNs argument
+    """
+    def __init__(self, *args, **kwargs):
+        super(ParserMultipleLFNs, self).__init__(self, *args, **kwargs)
+        self.parser.add_argument(
+            'lfns', type=str, nargs='+',
+            help='Paths to datasets (directories that contain .root files)'
+            )
+
+    def parse_args(self, *args, **kwargs):
+        parsed_args = super(ParserMultipleLFNs, self).parse_args(*args, **kwargs)
+        parsed_args.lfns = cli_expand_lfns(parsed_args.lfns)
+        return parsed_args
+
 
 def cli_detect_fnal():
     if DEFAULT_MGM is None and os.uname()[1].endswith('.fnal.gov'):

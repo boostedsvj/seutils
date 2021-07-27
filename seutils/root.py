@@ -92,7 +92,40 @@ def iter_branches(tree, treepath=None, implementation=None):
 # _______________________________________________________
 # Algo's using the basic root functions above
 
-def write_count_cache(cache, dst, failure_ok=True, delete_first=False):
+# def write_count_cache(cache, dst, failure_ok=True, delete_first=False):
+#     '''
+#     Writes the cache to dst by first opening a tempfile, copying it, and deleting the tempfile.
+
+#     If `failure_ok` is True, any encountered exceptions are ignored (since typically writing
+#     to the cache isn't critical).
+
+#     If `delete_first` is True it is attempted to delete the file first.
+
+#     Returns True if cache is successfully written.
+#     '''
+#     try:
+#         try:
+#             fd, path = tempfile.mkstemp()
+#             with open(path, 'w') as f:
+#                 json.dump(cache, f, indent=2, sort_keys=True)
+#             if delete_first:
+#                 try:
+#                     seutils.rm(dst)
+#                 except Exception:
+#                     # Not a big deal if this fails
+#                     pass
+#             seutils.cp(path, dst)
+#         finally:
+#             os.close(fd)
+#     except Exception:
+#         if failure_ok:
+#             seutils.logger.warning('Could not write cache to %s', dst)
+#             return False
+#         else:
+#             raise
+#     return True
+
+def write_count_cache(cache, dst=None, failure_ok=True):
     '''
     Writes the cache to dst by first opening a tempfile, copying it, and deleting the tempfile.
 
@@ -103,12 +136,14 @@ def write_count_cache(cache, dst, failure_ok=True, delete_first=False):
 
     Returns True if cache is successfully written.
     '''
+    if dst is None: dst = cache.cache_path
     try:
         try:
             fd, path = tempfile.mkstemp()
             with open(path, 'w') as f:
-                json.dump(cache, f, indent=2, sort_keys=True)
-            if delete_first:
+                cache.meta['last_update'] = datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                json.dump(dict(**cache.cache, _meta=cache.meta), f, indent=2, sort_keys=True)
+            if cache.inode:
                 try:
                     seutils.rm(dst)
                 except Exception:
@@ -125,6 +160,66 @@ def write_count_cache(cache, dst, failure_ok=True, delete_first=False):
             raise
     return True
 
+class Cache:
+    """
+    Wrapper class for a rootfile count cache.
+    If noload=True, the cache is not read from the file and initialized empty.
+    """
+    def __init__(self, cache_path, noload=False):
+        self.cache_path = cache_path
+        if not(noload) and self.inode:
+            self.cache = json.loads(seutils.cat(self.cache_path))
+        else:
+            self.cache = {}
+        # The `_meta` entry of the returned dict is not a rootfile,
+        # but contains some meta info about the cache
+        self.meta = self.cache.pop('_meta', {})
+        self.is_updated = False
+
+    def __getitem__(self, rootfile):
+        """
+        Basically self.cache.__getitem__, but filters the _mtime key
+        """
+        # Should rightly raise a KeyError if rootfile is not in the cache
+        item = self.cache[rootfile]
+        item.pop('_mtime', None)
+        return item
+
+    def __contains__(self, rootfile):
+        return rootfile in self.cache
+
+    # Some standard dict methods, using the overwritten __getitem__
+    def keys(self):
+        return self.cache.keys()
+    def values(self):
+        for k in self.keys():
+            yield self[k]
+    def items(self):
+        for k in self.keys():
+            yield k, self[k]
+
+    @property
+    def inode(self):
+        if not hasattr(self, '_inode'):
+            self._inode = seutils.stat(self.cache_path, not_exist_ok=True)
+        return self._inode
+
+    def lastupdate(self, rootfile):
+        """
+        Returns the time of the last update of a specific rootfile entry
+        """
+        item = self.cache[rootfile]
+        return datetime.datetime.strptime(item['_mtime'], '%Y%m%d_%H%M%S')
+
+    def __setitem__(self, rootfile, counts):
+        """
+        Updates the cache, so an _mtime is added to the entry and the cache
+        is marked as updated
+        """
+        counts['_mtime'] = datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+        self.is_updated = True
+        self.cache[rootfile] = counts
+
 
 def count_dataset(directory, read_cache=True, write_cache=True, rootfiles=None):
     '''
@@ -139,51 +234,60 @@ def count_dataset(directory, read_cache=True, write_cache=True, rootfiles=None):
     If `rootfiles` is specified, only those root files will be attempted to be read
     from the cache, and only those will be updated in the cache
     '''
-    cache_file = osp.join(directory, '.seucounts.json')
     dir_inode = seutils.stat(directory)
     if dir_inode.isfile:
         raise Exception('{} is a file, not a directory'.format(directory))
+    
+    # If rootfiles are passed, make sure they have a proper mgm
+    if rootfiles: rootfiles = [seutils.format(r) for r in rootfiles]
 
-    cache_inode = seutils.stat(cache_file, not_exist_ok=True)
-    if read_cache:
-        if cache_inode is None:
-            cache = {}
+    cache = Cache(osp.join(directory, '.seucounts.json'), noload=not(read_cache))
+
+    # If cache exists, and is up to date (i.e. newer or as old as the dir modtime),
+    # it might be possible to do a shortcut and save some interactions
+    # with the storage element
+    if cache.inode and dir_inode.modtime <= cache.inode.modtime:
+        rootfiles_in_cache = set(cache.keys())
+        if rootfiles:
+            set_rootfiles = set(osp.basename(p) for p in rootfiles)
         else:
-            cache = json.loads(seutils.cat(cache_file))
-            if dir_inode.modtime <= cache_inode.modtime:
-                # The cache is the last modified file - just return the cache
-                seutils.logger.info('Cached result (%s)', cache_inode.modtime)
-                return cache
-    else:
-        cache = {}
+            set_rootfiles = set(osp.basename(p) for p in seutils.ls_wildcard(osp.join(directory, '*.root')))
+        if set_rootfiles.issubset(rootfiles_in_cache):
+            # All the requested rootfiles are in the cache
+            # Remove the rootfiles in the cache that were not 
+            # asked for, and return
+            seutils.logger.warning(
+                'All requested rootfiles contained; Returning cached result (%s)',
+                cache.inode.modtime
+                )
+            cache.cache = { k:v for k,v in cache.items() if k in set_rootfiles }
+            return cache
 
-    is_updated = False
-
+    # Get list of inodes of contained rootfiles, or only the specified rootfiles
     if rootfiles is None:
         rootfiles = seutils.ls_wildcard(osp.join(directory, '*.root'), stat=True)
     else:
         rootfiles = [seutils.stat(r) for r in rootfiles]
 
+    # Update the cache for the rootfiles
     for inode in rootfiles:
+        # Double-check the rootfile is actually in the directory
         if osp.dirname(inode.path).rstrip('/') != directory.rstrip('/'):
             raise Exception('rootfile {} is not in {}'.format(inode.path, directory))
-        entry = cache.get(inode.basename, None)
-        if entry and datetime.strptime(entry['_mtime'], '%Y%m%d_%H%M%S') > inode.modtime:
-            # Entry is up to date - do nothing
-            continue
+        rootfile = inode.basename
+        if rootfile in cache and cache.lastupdate(rootfile) > inode.modtime:
+            seutils.logger.debug('Cache is up to date for %s', inode.path)
         else:
             # Have to update the cache
-            entry = {'_mtime' : datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}
-            for treepath, nentries in seutils.root.trees_and_counts(inode.path):
-                entry[treepath] = nentries
-            cache[inode.basename] = entry
-            is_updated = True
+            seutils.logger.debug('Updating cache for %s', inode.path)
+            cache[rootfile] = { k:v for k, v in seutils.root.trees_and_counts(inode.path) }
 
-    if write_cache and is_updated:
-        write_count_cache(
-            cache, cache_file,
-            delete_first=cache_inode is not None
-            )
+    # If the cache is updated, dump it to the cache file
+    if write_cache and cache.is_updated: write_count_cache(cache)
+
+    # Filter unasked rootfiles, if any
+    set_rootfiles = set(osp.basename(i.path) for i in rootfiles)
+    cache.cache = { k:v for k,v in cache.items() if k in set_rootfiles }
     return cache
 
 def sum_dataset(directory, treepath=None, **kwargs):

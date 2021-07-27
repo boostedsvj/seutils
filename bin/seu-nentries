@@ -3,8 +3,8 @@
 import seutils
 import argparse
 import os.path as osp
-parser = argparse.ArgumentParser()
-parser.add_argument('rootfiles', type=str, nargs='+', help='LFNs to be formatted')
+
+parser = seutils.ParserMultipleLFNs()
 parser.add_argument('-t', '--tree', type=str, help='Name of the tree to count')
 parser.add_argument(
     '-f', '--force', action='store_true',
@@ -13,9 +13,8 @@ parser.add_argument(
 args = parser.parse_args()
 
 def main():
-    rootfiles = seutils.cli_expand_lfns(args.rootfiles)
     per_dirname = {}
-    for rootfile in rootfiles:
+    for rootfile in args.lfns:
         dirname = osp.dirname(rootfile)
         if dirname not in per_dirname: per_dirname[dirname] = []
         per_dirname[dirname].append(rootfile)
@@ -26,7 +25,6 @@ def main():
         for rootfile, counts in counts_per_rootfile.items():
             print(rootfile)
             for tree, count in counts.items():
-                if tree == '_mtime': continue
                 if (args.tree and tree != args.tree): continue
                 print('  {:5} {}'.format(count, tree))
                 counts_per_tree.setdefault(tree, 0)
