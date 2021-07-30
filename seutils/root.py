@@ -142,7 +142,7 @@ def write_count_cache(cache, dst=None, failure_ok=True):
             fd, path = tempfile.mkstemp()
             with open(path, 'w') as f:
                 cache.meta['last_update'] = datetime.datetime.utcnow().strftime('%Y%m%d_%H%M%S')
-                json.dump(dict(**cache.cache, _meta=cache.meta), f, indent=2, sort_keys=True)
+                json.dump(dict(_meta=cache.meta, **cache.cache), f, indent=2, sort_keys=True)
             if cache.inode:
                 try:
                     seutils.rm(dst)
