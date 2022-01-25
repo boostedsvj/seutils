@@ -1,5 +1,5 @@
 import seutils, os
-from seutils import run_command, get_exitcode, Inode, split_mgm, N_COPY_RETRIES
+from seutils import run_command, get_exitcode, Inode, split_mgm
 import os.path as osp
 logger = seutils.logger
 
@@ -38,7 +38,7 @@ def _lsstatline_to_inode(l, server, parent_path):
     path = server + ':' + osp.join(parent_path, ' '.join(components[8:]))
     return Inode(path, modtime, isdir, size)
 
-def cp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose=True, force=False):
+def cp(src, dst, n_attempts=seutils.N_COPY_ATTEMPTS, create_parent_directory=True, verbose=True, force=False):
     cmd = [ 'scp', src, dst ]
     if verbose: cmd.insert(1, '-v')
     if create_parent_directory:
@@ -47,7 +47,7 @@ def cp(src, dst, n_retries=N_COPY_RETRIES, create_parent_directory=True, verbose
             mkdir(parent_dir)
         elif not osp.isdir(parent_dir):
             os.makedirs(osp.dirname(dst))
-    run_command(cmd, n_retries=n_retries)
+    run_command(cmd, n_attempts=n_attempts)
 
 def listdir(directory, stat=False):
     server, path = _split_remote(directory)
