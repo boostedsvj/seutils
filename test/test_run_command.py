@@ -17,8 +17,8 @@ def test_run_command():
     with pytest.raises(seutils.NonZeroExitCode):
         seutils.run_command(['ls', 'doesnotexist'])
     with pytest.raises(seutils.NoSuchPath):
-        seutils.run_command(['ls', 'doesnotexist'], rcodes={1: seutils.NoSuchPath})
+        seutils.run_command(['cd', 'doesnotexist'], rcodes={1: seutils.NoSuchPath})
 
 def test_get_exitcode():
     assert seutils.get_exitcode(['echo']) == 0
-    assert seutils.get_exitcode(['ls', 'doesnotexist']) == 1
+    assert seutils.get_exitcode(['ls', 'doesnotexist']) > 0
