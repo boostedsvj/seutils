@@ -1,23 +1,4 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import seutils
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument('lfns', type=str, nargs='*', help='LFNs to be formatted')
-parser.add_argument('-m', '--mgm', type=str, help='MGM to be used')
-parser.add_argument('-s', '--sort', action='store_true', help='Sorts by size instead (default is by name)')
-args = parser.parse_args()
-
-def main():
-    mgm = args.mgm if args.mgm else None
-    seutils.cli_detect_fnal() # Set fnal mgm as fall back
-    if not args.lfns: args.lfns = ['']
-    for lfn in args.lfns:
-        lfn = seutils.cli_flexible_format(lfn, mgm)
-        inodes = seutils.ls_wildcard(lfn, stat=True)
-        if args.sort: inodes.sort(key=lambda inode: -inode.size)
-        for inode in inodes:
-            print('{0:<8} {1}'.format(inode.size_human, inode.path))
-
-if __name__ == '__main__':
-    main()
+seutils.cli.du()

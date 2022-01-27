@@ -1,5 +1,3 @@
-from asyncio.log import logger
-from re import S
 import seutils
 import uuid
 import os.path as osp
@@ -465,5 +463,11 @@ def activate_command_interception(fake_internet=None):
     if fake_internet is None: fake_internet = FakeInternet()
     def fake_run_command_rcode_and_output(cmd, env=None, dry=None):
         return fake_internet.intercept(cmd)
+    seutils.__backup__run_command_rcode_and_output = seutils.run_command_rcode_and_output
     seutils.run_command_rcode_and_output = fake_run_command_rcode_and_output
     seutils.active_fake_internet = fake_internet
+
+def deactivate_command_interception():
+    if hasattr(seutils, '__backup__run_command_rcode_and_output'):
+        seutils.run_command_rcode_and_output = seutils.__backup__run_command_rcode_and_output
+        del seutils.__backup__run_command_rcode_and_output

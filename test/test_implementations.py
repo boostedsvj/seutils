@@ -17,7 +17,8 @@ def impl(request):
     fi = get_fake_internet()
     seutils.logger.debug('Setup; test nodes: %s', fi.fs['root://foo.bar.gov'].nodes)
     fakefs.activate_command_interception(fi)
-    return request.getfixturevalue(request.param)
+    yield request.getfixturevalue(request.param)
+    fakefs.deactivate_command_interception()
 
 @pytest.fixture
 def gfal_impl():
@@ -177,3 +178,5 @@ def test_walk(impl):
 @pytest.mark.parametrize('impl', implementations, indirect=True)
 def test_ls_wildcard(impl):
     seutils.ls_wildcard('root://foo.bar.gov//foo/*/*', implementation=impl) == ['root://foo.bar.gov//foo/bar/test.file']
+    seutils.ls_wildcard('root://foo.bar.gov//foo', implementation=impl) == ['root://foo.bar.gov//foo']
+    seutils.ls_wildcard('root://foo.bar.gov//foo/', implementation=impl) == ['root://foo.bar.gov//foo']

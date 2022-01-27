@@ -6,11 +6,9 @@ import os, os.path as osp
 # _______________________________________________________________________
 # Test rm safety on actual storage element
 
+@pytest.mark.real_integration
 def test_rm_safety_xrd():
     run_rm_safety_test(seutils.XrdImplementation())
-
-def test_rm_safety_gfal():
-    run_rm_safety_test(seutils.GfalImplementation())
 
 def run_rm_safety_test(impl):
     if not impl.isdir('root://cmseos.fnal.gov//store/user/klijnsma/foo/bar'):
@@ -46,14 +44,15 @@ def activate_fake_internet():
 
 def test_fake_integration_xrd():
     activate_fake_internet()
-    run_implementation_tests(seutils.XrdImplementation())
+    run_implementation_tests(seutils.XrdImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
+    fakefs.deactivate_command_interception()
 
+@pytest.mark.real_integration
 def test_real_integration_xrd():
-    run_implementation_tests(seutils.XrdImplementation())
+    run_implementation_tests(seutils.XrdImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
 
-remote_test_dir = 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir'
 
-def run_implementation_tests(impl):
+def run_implementation_tests(impl, remote_test_dir):
     '''Run integration tests in one order to not overload the SE'''
     # Setup and testing contents
     impl.mkdir(remote_test_dir)

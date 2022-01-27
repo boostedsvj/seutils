@@ -4,11 +4,15 @@ import os.path as osp
 import logging, subprocess, os, glob, time, datetime, argparse
 from contextlib import contextmanager
 
-
 N_COPY_ATTEMPTS = 1
 DEFAULT_LOGGING_LEVEL = logging.WARNING
 N_SECONDS_SLEEP = 10
 
+INCLUDE_DIR = osp.join(osp.abspath(osp.dirname(__file__)), "include")
+
+def version():
+    with open(osp.join(INCLUDE_DIR, "VERSION"), "r") as f:
+        return(f.read().strip())
 
 def setup_logger(name='seutils'):
     if name in logging.Logger.manager.loggerDict:
@@ -756,6 +760,14 @@ ssh = PlaceholderImplementation()
 
 implementations = dict(gfal=gfal, pyxrd=pyxrd, xrd=xrd, eos=eos, ssh=ssh)
 
+def get_implementation(implementation_name):
+    """
+    Returns an implementation instance corresponding to the passed name.
+    Returns None if `implementation_name` is 'auto' or None.
+    """
+    if implementation_name in ['auto', None]:
+        return None
+    return implementations[implementation_name]
 
 def best_implementation(cmd_name, path=None):
     """
@@ -873,7 +885,8 @@ def make_global_scope_command(cmd_name):
     underlying implementation.
     """
     def wrapper(path, *args, **kwargs):
-        implementation = kwargs.pop('implementation', best_implementation(cmd_name, path))
+        implementation = kwargs.pop('implementation', None)
+        if implementation is None: implementation = best_implementation(cmd_name, path)
         return getattr(implementation, cmd_name)(path, *args, **kwargs)
     return wrapper
         
@@ -1242,76 +1255,10 @@ def ls_wildcard(pattern, stat=False, implementation=None):
     return matches
 
 # _______________________________________________________
-# Command line helpers
+# CLI
 
-class Parser:
-    """
-    Very thin wrapper class for argparse.ArgumentParser with some options
-    used for every command line tool in seutils
-    """
-    def __init__(self, *args, **kwargs):
-        self.parser = argparse.ArgumentParser(*args, **kwargs)
-        self.parser.add_argument('-v', '--verbose', action='store_true', help='Increases verbosity')
-        self.parser.add_argument('-d', '--dry', action='store_true', help='Does not actually run any commands')
+from . import cli
 
-    def add_argument(self, *args, **kwargs):
-        self.parser.add_argument(*args, **kwargs)
-
-    def parse_args(self, *args, **kwargs):
-        parsed_args = self.parser.parse_args(*args, **kwargs)
-        if parsed_args.verbose: debug()
-        if parsed_args.dry: drymode()
-        return parsed_args
-
-class ParserMultipleLFNs(Parser):
-    """
-    Like ArgumentParser, but includes a multiple LFNs argument
-    """
-    def __init__(self, *args, **kwargs):
-        super(ParserMultipleLFNs, self).__init__(self, *args, **kwargs)
-        self.parser.add_argument(
-            'lfns', type=str, nargs='+',
-            help='Paths to datasets (directories that contain .root files)'
-            )
-
-    def parse_args(self, *args, **kwargs):
-        parsed_args = super(ParserMultipleLFNs, self).parse_args(*args, **kwargs)
-        parsed_args.lfns = cli_expand_lfns(parsed_args.lfns)
-        return parsed_args
-
-
-def cli_detect_fnal():
-    if DEFAULT_MGM is None and os.uname()[1].endswith('.fnal.gov'):
-        mgm = 'root://cmseos.fnal.gov'
-        logger.warning('Detected fnal.gov host; using mgm %s as default if necessary', mgm)
-        set_default_mgm(mgm)
-
-def cli_flexible_format(lfn, mgm=None):
-    if is_ssh(lfn): return lfn
-    cli_detect_fnal()
-    if not has_protocol(lfn) and not lfn.startswith('/'):
-        try:
-            prefix = '/store/user/' + os.environ['USER']
-            logger.warning('Pre-fixing %s', prefix)
-            lfn = os.path.join(prefix, lfn)
-        except KeyError:
-            pass
-    if has_protocol(lfn):
-        return format(lfn)
-    else:
-        return format(lfn, mgm)
-
-def cli_expand_lfns(raw_lfns):
-    # First preprocess any wildcards
-    lfns = []
-    for lfn in raw_lfns:
-        if '*' in lfn:
-            lfns.extend(ls_wildcard(lfn))
-        else:
-            lfns.append(lfn)
-    # Format once more to be sure everything is a proper lfn
-    lfns = [cli_flexible_format(lfn, cli_detect_fnal()) for lfn in lfns]
-    return lfns
 
 # _______________________________________________________
 # root utils extension

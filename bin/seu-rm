@@ -1,40 +1,4 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 import seutils
-import argparse
-parser = argparse.ArgumentParser()
-parser.add_argument('paths', type=str, nargs='*', help='LFNs to be removed')
-parser.add_argument('-m', '--mgm', type=str, help='MGM to be used')
-parser.add_argument('-y', action='store_true', help='Skip user verification')
-parser.add_argument('-r', action='store_true', help='Recursive remove (required for directories)')
-args = parser.parse_args()
-
-try:
-    input = raw_input
-except NameError:
-    pass
-
-def main():
-    mgm = args.mgm
-    if not args.mgm:
-        mgm_fnal = seutils.cli_detect_fnal()
-        if mgm_fnal: mgm = mgm_fnal
-
-    for path in args.paths:
-        path = seutils.cli_flexible_format(path, mgm)
-        expanded_paths = seutils.ls_wildcard(path)
-        for expanded_path in expanded_paths:
-            if not args.y:
-                do_continue = False
-                while True:
-                    answer = input('rm {}{} [y/n]? '.format('-r ' if args.r else '', expanded_path)).lower()
-                    if answer == 'y':
-                        break
-                    elif answer == 'n':
-                        do_continue = True
-                        break
-                if do_continue: continue
-            seutils.rm(expanded_path, args.r)
-
-if __name__ == '__main__':
-    main()
+seutils.cli.rm()
