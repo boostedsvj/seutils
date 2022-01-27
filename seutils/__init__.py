@@ -683,6 +683,7 @@ class Implementation:
     def check_is_installed(self):
         raise NotImplementedError
 
+    @add_env_kwarg
     def exists(self, path):
         try:
             self.stat(path)
@@ -690,6 +691,7 @@ class Implementation:
         except NoSuchPath:
             return False
 
+    @add_env_kwarg
     def isfile(self, path):
         try:
             inode = self.stat(path)
@@ -697,6 +699,7 @@ class Implementation:
         except NoSuchPath:
             return False
 
+    @add_env_kwarg
     def is_file_or_dir(self, path):
         try:
             inode = self.stat(path)
@@ -704,6 +707,7 @@ class Implementation:
         except NoSuchPath:
             return 0
 
+    @add_env_kwarg
     def isdir(self, directory):
         try:
             inode = self.stat(directory)
@@ -1004,7 +1008,13 @@ def diff(left, right, stat=False, implementation=None):
 
     (Note intersection_left and intersection_right) will have the same
     contents, but different mgms)
+
+    TODO: Currently only implemented if both left and right are remote!
     """
+    for path in [left, right]:
+        if not has_protocol(path):
+            raise NotImplementedError('diff does not support local paths yet: {0}'.format(path))
+
     contents_left = listdir_recursive(left)
     contents_right = listdir_recursive(right)
 

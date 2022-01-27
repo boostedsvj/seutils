@@ -199,9 +199,20 @@ def test_diff(impl):
     fs1.put('root://foo.bar.gov//foo/bla/new.file', isdir=False)
     fs2 = seutils.active_fake_internet.fs['gsiftp://foo.bar.edu']
     fs2.put('gsiftp://foo.bar.edu//foo/bar/test.file', isdir=False)
-    assert seutils.diff('root://foo.bar.gov//foo', 'gsiftp://foo.bar.edu//foo') == (
+    assert seutils.diff('root://foo.bar.gov//foo', 'gsiftp://foo.bar.edu//foo', implementation=impl) == (
         ['root://foo.bar.gov//foo/bar', 'root://foo.bar.gov//foo/bar/test.file'],
         ['gsiftp://foo.bar.edu//foo/bar', 'gsiftp://foo.bar.edu//foo/bar/test.file'],
         ['root://foo.bar.gov//foo/bla', 'root://foo.bar.gov//foo/bla/new.file'],
-        ['gsiftp://foo.bar.edu//foo/bar/other.file']
+        ['gsiftp://foo.bar.edu//foo/bar/other.file'],
         )
+    # Local paths not yet supported!
+    # assert seutils.diff('root://foo.bar.gov//foo', '/foo', implementation=impl) == (
+    #     ['root://foo.bar.gov//foo/bar', 'root://foo.bar.gov//foo/bar/test.file'],
+    #     ['/foo/bar', '/foo/bar/test.file'],
+    #     ['root://foo.bar.gov//foo/bla', 'root://foo.bar.gov//foo/bla/new.file'],
+    #     ['/foo/bar/local.file']
+    #     )
+    with pytest.raises(NotImplementedError):
+        seutils.diff('root://foo.bar.gov//foo', '/foo')
+    with pytest.raises(NotImplementedError):
+        seutils.diff('/foo', 'root://foo.bar.gov//foo')
