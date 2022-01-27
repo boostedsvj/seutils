@@ -1,7 +1,7 @@
 from __future__ import print_function
 import seutils, os, argparse
 
-class Parser:
+class Parser(object):
     """
     Very thin wrapper class for argparse.ArgumentParser with some options
     used for every command line tool in seutils
@@ -38,27 +38,28 @@ class Parser:
 
 class ParserSingleRemotePath(Parser):
     def __init__(self, *args, **kwargs):
-        super(ParserSingleRemotePath, self).__init__(self, *args, **kwargs)
+        super(ParserSingleRemotePath, self).__init__(*args, **kwargs)
         self.add_argument('path', type=str, help='Path (must be remote)')
 
     def parse_args(self, *args, **kwargs):
-        parsed_args = super().parse_args(*args, **kwargs)
+        parsed_args = super(ParserSingleRemotePath, self).parse_args(*args, **kwargs)
         if not seutils.has_protocol(parsed_args.path):
             raise TypeError('Path {0} is not remote'.format(parsed_args.path))
         elif '*' in parsed_args.path:
             raise TypeError('Path {0}: Wildcards not accepted'.format(parsed_args.path))
         return parsed_args
 
+
 class ParserMultipleRemotePaths(Parser):
     def __init__(self, *args, **kwargs):
-        super(ParserMultipleRemotePaths, self).__init__(self, *args, **kwargs)
+        super(ParserMultipleRemotePaths, self).__init__(*args, **kwargs)
         self.add_argument('paths', type=str, nargs='*', help='Paths (must be remote)')
 
     def parse_args(self, *args, **kwargs):
         expand_wildcards = kwargs.pop('expand_wildcards', True)
         allow_zero_paths = kwargs.pop('allow_zero_paths', False)
         disallow_wildcards = kwargs.pop('disallow_wildcards', False)
-        parsed_args = super().parse_args(*args, **kwargs)
+        parsed_args = super(ParserMultipleRemotePaths, self).parse_args(*args, **kwargs)
         paths = []
         for path in parsed_args.paths:
             if not seutils.has_protocol(path):

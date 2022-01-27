@@ -62,7 +62,7 @@ def generate_fake_tree(rd=None):
     return nodes
 
 
-class FakeFS:
+class FakeFS(object):
     def __init__(self, nodes=None):
         self.nodes = [] if nodes is None else nodes
 
@@ -138,7 +138,7 @@ class FakeFS:
         return contents
 
     def cp(self, src, dst):
-        seutils.logger.debug(f'FakeFS cp: {src=} -> {dst=}')
+        seutils.logger.debug('FakeFS cp: {0} -> {1}'.format(src, dst))
         if self.exists(dst):
             raise ValueError('Path {} exists'.format(dst))
         src_node = self.stat(src)
@@ -180,7 +180,7 @@ class FakeFS:
 class FakeRemoteFS(FakeFS):
     def __init__(self, mgm):
         self.mgm = mgm.rstrip('/')
-        super().__init__()
+        super(FakeRemoteFS, self).__init__()
 
     def stat(self, path):
         return self.get_node(seutils.format(path, self.mgm))
@@ -222,7 +222,10 @@ class FakeFSTransaction:
         self.kwargs = kwargs
 
     def execute(self, fs):
-        seutils.logger.debug(f'Executing {self.cmd} with args={self.args}, kwargs={self.kwargs}')
+        seutils.logger.debug(
+            'Executing {0} with args={1}, kwargs={2}'
+            .format(self.cmd, self.args, self.kwargs)
+            )
         product = getattr(fs, self.cmd)(*self.args, **self.kwargs)
         if self.postprocess:
             product = self.postprocess(product)
@@ -324,7 +327,7 @@ class FakeXrdInterceptor(FakeCommandInterceptor):
 
     def intercept(self, cmd, flags):
         if cmd[0] == 'xrdcp':
-            seutils.logger.debug(f'Intercepted: {cmd=}, {flags=}')
+            seutils.logger.debug('Intercepted: cmd={0}, flags={1}'.format(cmd, flags))
             return FakeFSTransaction('cp', cmd[1], cmd[2])
         if cmd[0] != 'xrdfs':
             raise NotIntercepted(cmd + flags)

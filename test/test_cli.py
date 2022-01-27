@@ -1,7 +1,11 @@
 import seutils, pytest, fakefs
 import sys
-from io import StringIO 
 from contextlib import contextmanager
+
+if sys.version_info.major == 2:
+    from io import BytesIO as StringIO
+else:
+    from io import StringIO 
 
 class capturing(list):
     def __enter__(self):
@@ -17,7 +21,7 @@ def capture(argv):
     command = argv[0].replace('seu-', '')
     with sys_argv(argv):
         with capturing() as output:
-            getattr(seutils.cli, command)()
+            getattr(seutils.cli, command)()    
     return output
 
 @pytest.fixture

@@ -118,10 +118,8 @@ def rm_safety(fn):
         path = split_mgm(normpath(path))[1]
         depth = path.count('/')
         logger.debug('In rm_safety wrapper')
-        logger.debug(f'{path=}')
         # Check if the passed `path` is in the blacklist:
         for bl_path in RM_BLACKLIST:
-            logger.debug(f'{bl_path=}')
             if bl_path == path:
                 raise RmSafetyTrigger(path)
             elif bl_path.count('/') != depth:
@@ -131,7 +129,6 @@ def rm_safety(fn):
         # Check if the passed `path` is in the whitelist:
         if RM_WHITELIST:
             for wl_path in RM_WHITELIST:
-                logger.debug(f'{wl_path=}')
                 if path.startswith(wl_path):
                     break
             else:
@@ -223,7 +220,6 @@ def run_command(cmd, *args, **kwargs):
         else:
             raise NonZeroExitCode(rcode, cmd)
 
-
 def get_exitcode(cmd, *args, **kwargs):
     """
     Runs a command and returns the exit code.
@@ -231,43 +227,6 @@ def get_exitcode(cmd, *args, **kwargs):
     rcode, _ = run_command_rcode_and_output(cmd, *args, **kwargs)
     logger.debug('Got exit code %s', rcode)
     return rcode
-
-
-# def run_command(cmd, env=None, dry=None, nonzero_exitcode_ok=False, n_retries=0, return_output_on_nonzero_exitcode=False):
-#     """Wrapper around run_command_rcode_and_output.
-#     Raises an exception on non-zero exit code, except if nonzero_exitcode_ok is set to True.
-#     Can retry the command on non-zero exit code.
-#     """
-#     i_attempt = 0
-#     while True:
-#         logger.info('Attempt %s for cmd %s', i_attempt, ' '.join(cmd))
-#         rcode, output = run_command_rcode_and_output(cmd, env, dry)
-#         if rcode != 0:
-#             if nonzero_exitcode_ok:
-#                 logger.info('Command exited with status %s', rcode)
-#                 return output if return_output_on_nonzero_exitcode else rcode
-#             else:
-#                 logger.error('Exit status %s for command: %s', rcode, cmd)
-#                 logger.error('Output:\n%s', '\n'.join(output))
-#                 if i_attempt < n_retries:
-#                     i_attempt += 1
-#                     logger.error('Retrying attempt %s/%s in %s seconds...', i_attempt, n_retries, N_SECONDS_SLEEP)
-#                     time.sleep(N_SECONDS_SLEEP)
-#                     continue
-#                 else:
-#                     raise NonZeroExitCode(rcode, cmd)
-#         logger.info('Command exited with status 0 - all good')
-#         return output
-
-# def get_exitcode(cmd, env=None, dry=None):
-#     """
-#     Runs a command and returns the exit code.
-#     """
-#     if is_string(cmd): cmd = [cmd]
-#     rcode, _ = run_command_rcode_and_output(cmd, env, dry)
-#     logger.debug('Got exit code %s', rcode)
-#     return rcode
-
 
 def bytes_to_human_readable(num, suffix='B'):
     """
@@ -459,7 +418,6 @@ def iter_parent_dirs(path):
         yield dir
         previous_dir = dir
         dir = dirname(dir)
-
 
 def get_protocol(path, mgm=None):
     """
@@ -778,10 +736,8 @@ def best_implementation(cmd_name, path=None):
         preferred_order = [ssh]
     elif cmd_name == 'rm':
         preferred_order = [ eos, gfal, pyxrd, xrd]
-    elif path and get_protocol(path) == 'root':
-        preferred_order = [ gfal, pyxrd, xrd, eos ]
     else:
-        preferred_order = [ pyxrd, xrd, gfal, eos ]
+        preferred_order = [ xrd, gfal, pyxrd, eos ]
     # Return first one that's installed
     for implementation in preferred_order:
         if implementation.is_installed() and hasattr(implementation, cmd_name):
@@ -791,92 +747,6 @@ def best_implementation(cmd_name, path=None):
                 )
             return implementation
     raise Exception('No installed implementation found for cmd {0}, path {1}'.format(cmd_name, path))
-
-
-
-# # Import implementations
-# from . import xrd
-# from . import pyxrd
-# from . import eos
-# from . import ssh
-# _implementations = [ xrd, pyxrd, eos, ssh ]
-
-# def get_implementation(name):
-#     """
-#     Takes the name of a submodule that contains implementations. Returns that module object.
-#     """
-#     for implementation in _implementations:
-#         if implementation.__name__.rsplit('.',1)[-1] == name:
-#             break
-#     else:
-#         raise Exception('No such implementation: {0}'.format(name))
-#     return implementation
-
-# _commands = [
-#     'mkdir', 'rm', 'stat', 'exists', 'isdir',
-#     'isfile', 'is_file_or_dir', 'listdir', 'cp', 'cat'
-#     ]
-
-# def get_command(cmd_name, implementation=None, path=None):
-#     """
-#     Returns an implementation of a command.
-#     Parameter `implementation` is a module object; it can also be a name of a module.
-#     If it's None, a heuristic is ran to guess the best implementation.
-#     The `path` parameter is optional and only serves to make a better guess for the implementation.
-#     """
-#     if not cmd_name in _commands:
-#         raise Exception('Invalid command: {0}'.format(cmd_name))
-#     if implementation is None:
-#         implementation = best_implementation_heuristic(cmd_name, path)[0]
-#     elif is_string(implementation):
-#         implementation = get_implementation(implementation)
-#     if not hasattr(implementation, cmd_name):
-#         raise Exception(
-#             'Implementation {0} has no function {1}'
-#             .format(implementation.__name__, cmd_name)
-#             )
-#     return getattr(implementation, cmd_name)
-
-
-# def best_implementation_heuristic(cmd_name, path=None):
-#     """
-#     Determines the best implementation for a path.
-#     The order is loosely as follows:
-#     - If the python bindings of xrootd are importable, those are probably the most reliable
-#     - If the path does not start with root://, it's safer to use gfal
-#     - For root://-starting paths, use xrootd
-#     """
-#     # Shortcut for ssh
-#     if path and is_ssh(path):
-#         logger.debug('Path is ssh-like')
-#         return [ssh]
-#     # Grid protocols
-#     preferred_order = []
-#     def check(module):
-#         if module.is_installed() and hasattr(module, cmd_name) and not(module in preferred_order):
-#             preferred_order.append(module)
-#     # If this concerns removal, eos is the only tool that can do recursive directory removal:
-#     if cmd_name == 'rm': check(eos)
-#     # If path starts with root://, prefer xrd over gfal, otherwise the other way around
-#     if not(path is None) and get_protocol(path) != 'root':
-#         check(gfal)
-#         check(pyxrd)
-#         check(xrd)
-#     else:
-#         check(pyxrd)
-#         check(xrd)
-#         check(gfal)
-#     # Prefer eos last
-#     check(eos)
-#     # Check if at least one method is found
-#     if not len(preferred_order):
-#         raise Exception(
-#             'No good implementation could be found for cmd {0} (path {1})'
-#             .format(cmd_name, path)
-#             )
-#     logger.info('Using module %s to execute \'%s\' (path: %s)', preferred_order[0].__name__, cmd_name, path)
-#     return preferred_order
-
 
 
 def make_global_scope_command(cmd_name):
@@ -903,138 +773,11 @@ cp = make_global_scope_command('cp')
 stat_fn = stat # Alias for if stat is a keyword in a function in this module
 
 
-# # _______________________________________________________
-# # Actual interactions with SE
-# # The functions below are just wrappers for the actual implementations in
-# # separate modules. All functions have an `implementation` keyword; If set
-# # to None, the 'best' implementation is guessed.
-
-# @add_env_kwarg
-# def mkdir(path, implementation=None):
-#     """
-#     Creates a directory on the SE
-#     Does not check if directory already exists
-#     """
-#     path = format(path) # Ensures format
-#     logger.warning('Creating directory on SE: {0}'.format(path))
-#     cmd = get_command('mkdir', implementation=implementation, path=path)
-#     cmd(path)
-
-# @add_env_kwarg
-# def rm(path, recursive=False, implementation=None):
-#     """
-#     Creates a path on the SE
-#     Does not check if path already exists
-#     """
-#     path = format(path) # Ensures format
-#     logger.warning('Removing path on SE: {0}'.format(path))
-#     cmd = get_command('rm', implementation=implementation, path=path)
-#     cmd(path, recursive=recursive)
-
-# @add_env_kwarg
-# @cache
-# def stat(path, not_exist_ok=False, implementation=None):
-#     """
-#     Returns an Inode object for path.
-#     If not_exist_ok is True and the path doesn't exist, it returns None
-#     without raising an exception
-#     """
-#     path = format(path) # Ensures format
-#     cmd = get_command('stat', implementation=implementation, path=path)
-#     return cmd(path, not_exist_ok=not_exist_ok)
-
-
-# @add_env_kwarg
-# @cache
-# def exists(path, implementation=None):
-#     """
-#     Returns a boolean indicating whether the path exists.
-#     """
-#     return get_command('exists', implementation=implementation, path=path)(path)
-
-# @add_env_kwarg
-# @cache
-# def isdir(path, implementation=None):
-#     """
-#     Returns a boolean indicating whether the directory exists.
-#     Also returns False if the passed path is a file.
-#     """
-#     return get_command('isdir', implementation=implementation, path=path)(path)
-
-# @add_env_kwarg
-# @cache
-# def isfile(path, implementation=None):
-#     """
-#     Returns a boolean indicating whether the file exists.
-#     Also returns False if the passed path is a directory.
-#     """
-#     return get_command('isfile', implementation=implementation, path=path)(path)
-
-# @add_env_kwarg
-# @cache
-# def is_file_or_dir(path, implementation=None):
-#     """
-#     Returns 0 if path does not exist
-#     Returns 1 if it's a directory
-#     Returns 2 if it's a file
-#     """
-#     return get_command('is_file_or_dir', implementation=implementation, path=path)(path)
-
-# @add_env_kwarg
-# def listdir(path, stat=False, assume_isdir=False, implementation=None):
-#     """
-#     Returns the contents of a directory
-#     If 'assume_isdir' is True, it is assumed the user took
-#     care to pass a path to a valid directory, and no check is performed
-#     """
-#     if not(assume_isdir) and not isdir(path):
-#         raise Exception('{0} is not a directory'.format(path))
-#     cmd = get_command('listdir', implementation=implementation, path=path)
-#     return cmd(path, stat)
-
-# # Custom cache key generator dependent on whether stat was True or False
-# def _listdir_keygen(path, stat=False, *args, **kwargs):
-#     return path.strip() + '___stat{}'.format(stat)
-# listdir.keygen = _listdir_keygen
-# listdir = cache(listdir)
-
-# @add_env_kwarg
-# def cat(path, implementation=None):
-#     """
-#     Returns the contents of a directory
-#     If 'assume_isdir' is True, it is assumed the user took
-#     care to pass a path to a valid directory, and no check is performed
-#     """
-#     cmd = get_command('cat', implementation=implementation, path=path)
-#     return cmd(path)
-
-# @add_env_kwarg
-# def cp(src, dst, implementation=None, **kwargs):
-#     """
-#     Copies a file `src` to the storage element.
-#     Does not format `src` or `dst`; user is responsible for formatting.
-
-#     The method can be 'auto', 'xrdcp', or 'gfal-copy'. If 'auto', a heuristic
-#     will be applied to determine whether to best use xrdcp or gfal-copy.
-#     """
-#     logger.warning('Copying %s --> %s', src, dst)    
-#     cmd = get_command('cp', implementation=implementation, path=dst if has_protocol(dst) else src)
-#     cmd(src, dst, **kwargs)
-
 # _______________________________________________________
-# Algorithms that use the SE interaction implementation, but are agnostic to the underlying tool
-
-# def cp_to_se(src, dst, **kwargs):
-#     """
-#     Like cp, but assumes dst is a location on a storage element and src is local
-#     """
-#     cp(src, format(dst), **kwargs)
-
-# def cp_from_se(src, dst, **kwargs):
-#     """
-#     Like cp, but assumes src is a location on a storage element and dst is local
-#     """
-#     cp(format(src), dst, **kwargs)
+# Actual interactions with SE
+# The functions below are just wrappers for the actual implementations in
+# separate modules. All functions have an `implementation` keyword; If set
+# to None, the 'best' implementation is guessed.
 
 @add_env_kwarg
 def put(path, contents='', make_parent_dirs=True, tmpfile_path='seutils_tmpfile', **cp_kwargs):
@@ -1053,7 +796,6 @@ def put(path, contents='', make_parent_dirs=True, tmpfile_path='seutils_tmpfile'
         cp(tmpfile_path, path, **cp_kwargs)
     finally:
         os.remove(tmpfile_path)
-
 
 
 MAX_RECURSION_DEPTH = 20
@@ -1156,47 +898,6 @@ def _walk(path, stat, counter, implementation=None):
     for directory in directories:
         for i in _walk(directory.path, stat, counter, implementation=implementation):
             yield i
-
-# def ls_root(paths):
-#     """
-#     Flexible function that attempts to return a list of root files based on what
-#     the user most likely wanted to query.
-#     Takes a list of paths as input. If input as a string, it will be turned into a len-1 list.
-#     Firstly it is checked whether the path exists locally.
-#       If it's a root file, it's appended to the output,
-#       If it's a directory, it will be globbed for *.root.
-#     Secondly it's attempted to reach the path remotely.
-#     Returns a list of .root files.
-#     """
-#     if is_string(paths): paths = [paths]
-#     root_files = []
-#     for path in paths:
-#         if osp.exists(path):
-#             # Treat as a local path
-#             if osp.isfile(path):
-#                 if path.endswith('.root'):
-#                     root_files.append(path)
-#             elif osp.isdir(path):
-#                 root_files.extend(glob.glob(osp.join(path, '*.root')))
-#         else:
-#             # Treat path as a SE path
-#             try:
-#                 stat = is_file_or_dir(path)
-#                 if stat == 1:
-#                     # It's a directory
-#                     root_files.extend([ f for f in ls(path) if f.endswith('.root') ])
-#                 elif stat == 2:
-#                     # It's a file
-#                     root_files.append(format(path))
-#                 elif stat == 0:
-#                     logger.warning('Path %s does not exist locally or remotely', path)
-#             except RuntimeError:
-#                 logger.warning(
-#                     'Path %s does not exist locally and could not be treated as a remote path',
-#                     path
-#                     )
-#     root_files.sort()
-#     return root_files
 
 @add_env_kwarg
 def ls_wildcard(pattern, stat=False, implementation=None):
