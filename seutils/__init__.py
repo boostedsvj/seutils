@@ -406,6 +406,21 @@ def normpath(path):
     path = osp.normpath(path)
     return format(path, mgm) if is_remote else path
 
+def relpath(path, start):
+    """
+    Like osp.relpath, but works with an mgm.
+    """
+    if has_protocol(path) != has_protocol(start):
+        raise TypeError('{0} / {1}: either both or neither must have mgms'.format(path, start))
+    mgm1 = ''
+    mgm2 = ''
+    if has_protocol(path): mgm1, path = split_mgm(path)
+    if has_protocol(start): mgm2, start = split_mgm(start)
+    if mgm1 != mgm2:
+        raise TypeError('mgm mismatch: {0} vs. {1}'.format(mgm1, mgm2))
+    path = osp.normpath(path)
+    return osp.relpath(path, start)
+
 def iter_parent_dirs(path):
     """
     Iterates through all the parent directories of a path
@@ -955,11 +970,71 @@ def ls_wildcard(pattern, stat=False, implementation=None):
             directories[:] = []
     return matches
 
+
+def listdir_recursive(directory, stat=False, implementation=None):
+    """
+    Returns a list of all paths (or Inodes if `stat=True`) recursively under `directory`.
+    """
+    contents = []
+    for path, directories, files in walk(directory, stat=stat, implementation=implementation):
+        contents.extend(directories)
+        contents.extend(files)
+    return contents
+
+
+def _sorted_paths_from_set(relpaths_set, relpaths, contents):
+    """
+    Used internally by `diff`. For every element in `relpaths_set`,
+    return the matching item from `contents`. Preserves order of `contents`.
+    """
+    selected_contents = []
+    for rpath, content in zip(relpaths, contents):
+        if rpath in relpaths_set:
+            selected_contents.append(content)
+    return selected_contents
+
+@add_env_kwarg
+def diff(left, right, stat=False, implementation=None):
+    """
+    Returns 4 lists of paths (or Inodes, if `stat=True`):
+    - Paths in `left` that are also in `right` (intersection_left)
+    - Paths in `right` that are also in `left` (intersection_right)
+    - Paths in `left` that are not in `right` (only_in_left)
+    - Paths in `right` that are not in `left` (only_in_right)
+
+    (Note intersection_left and intersection_right) will have the same
+    contents, but different mgms)
+    """
+    contents_left = listdir_recursive(left)
+    contents_right = listdir_recursive(right)
+
+    if stat:
+        paths_left = [ n.path for n in contents_left ]
+        paths_right = [ n.path for n in contents_right ]
+    else:
+        paths_left = contents_left
+        paths_right = contents_right
+        
+    relpaths_left = [ relpath(p, left) for p in paths_left ]
+    relpaths_right = [ relpath(p, right) for p in paths_right ]
+    set_relpaths_left = set(relpaths_left)
+    set_relpaths_right = set(relpaths_right)
+
+    intersection = set_relpaths_left.intersection(set_relpaths_right)
+    only_in_left = set_relpaths_left - set_relpaths_right
+    only_in_right = set_relpaths_right - set_relpaths_left
+
+    return (
+        _sorted_paths_from_set(intersection, relpaths_left, contents_left),
+        _sorted_paths_from_set(intersection, relpaths_right, contents_right),
+        _sorted_paths_from_set(only_in_left, relpaths_left, contents_left),
+        _sorted_paths_from_set(only_in_right, relpaths_right, contents_right),
+        )
+
 # _______________________________________________________
 # CLI
 
 from . import cli
-
 
 # _______________________________________________________
 # root utils extension

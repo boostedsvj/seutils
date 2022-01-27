@@ -180,3 +180,28 @@ def test_ls_wildcard(impl):
     seutils.ls_wildcard('root://foo.bar.gov//foo/*/*', implementation=impl) == ['root://foo.bar.gov//foo/bar/test.file']
     seutils.ls_wildcard('root://foo.bar.gov//foo', implementation=impl) == ['root://foo.bar.gov//foo']
     seutils.ls_wildcard('root://foo.bar.gov//foo/', implementation=impl) == ['root://foo.bar.gov//foo']
+
+
+@pytest.mark.parametrize('impl', implementations, indirect=True)
+def test_listdir_recursive(impl):
+    fs = seutils.active_fake_internet.fs['root://foo.bar.gov']
+    fs.put('root://foo.bar.gov//foo/bla/new.file', isdir=False)
+    assert seutils.listdir_recursive('root://foo.bar.gov//foo') == [
+        'root://foo.bar.gov//foo/bar',
+        'root://foo.bar.gov//foo/bla',
+        'root://foo.bar.gov//foo/bar/test.file',
+        'root://foo.bar.gov//foo/bla/new.file'
+        ]
+
+@pytest.mark.parametrize('impl', implementations, indirect=True)
+def test_diff(impl):
+    fs1 = seutils.active_fake_internet.fs['root://foo.bar.gov']
+    fs1.put('root://foo.bar.gov//foo/bla/new.file', isdir=False)
+    fs2 = seutils.active_fake_internet.fs['gsiftp://foo.bar.edu']
+    fs2.put('gsiftp://foo.bar.edu//foo/bar/test.file', isdir=False)
+    assert seutils.diff('root://foo.bar.gov//foo', 'gsiftp://foo.bar.edu//foo') == (
+        ['root://foo.bar.gov//foo/bar', 'root://foo.bar.gov//foo/bar/test.file'],
+        ['gsiftp://foo.bar.edu//foo/bar', 'gsiftp://foo.bar.edu//foo/bar/test.file'],
+        ['root://foo.bar.gov//foo/bla', 'root://foo.bar.gov//foo/bla/new.file'],
+        ['gsiftp://foo.bar.edu//foo/bar/other.file']
+        )

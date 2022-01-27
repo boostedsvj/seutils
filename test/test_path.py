@@ -36,3 +36,13 @@ def test_inode_equality():
     assert left == right
     right.size = 1002
     assert left != right
+
+def test_relpath():
+    assert seutils.relpath('/foo/bar/bla.txt', '/foo/') == 'bar/bla.txt'
+    assert seutils.relpath('/foo/bar/bla.txt', '/foo') == 'bar/bla.txt'
+    assert seutils.relpath('root://foo.bar.gov//foo/bar/bla.txt', 'root://foo.bar.gov//foo/') == 'bar/bla.txt'
+    assert seutils.relpath('root://foo.bar.gov//foo/bar/bla.txt', 'root://foo.bar.gov//foo') == 'bar/bla.txt'
+    with pytest.raises(TypeError):
+        seutils.relpath('root://foo.bar.gov//foo/bar', '/foo')
+    with pytest.raises(TypeError):
+        seutils.relpath('root://foo.bar.gov//foo/bar', 'gsiftp://foo.bar.edu//foo')
