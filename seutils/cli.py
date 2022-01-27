@@ -182,7 +182,7 @@ def rm():
         if not args.y:
             do_continue = False
             while True:
-                answer = input('rm {}{} [y/n]? '.format('-r ' if args.r else '', expanded_path)).lower()
+                answer = input('rm {}{} [y/n]? '.format('-r ' if args.r else '', path)).lower()
                 if answer == 'y':
                     break
                 elif answer == 'n':

@@ -82,7 +82,7 @@ class GfalImplementation(seutils.Implementation):
 
     @seutils.add_env_kwarg
     def cat(self, path):
-        return self.run_command(['gfal-cat', path], path=path)
+        return ''.join(self.run_command(['gfal-cat', path], path=path))
 
 
 def statline_to_inode(statline, parent_directory):

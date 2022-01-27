@@ -2,6 +2,7 @@ import pytest
 import fakefs
 import seutils
 import os, os.path as osp
+import copy
 
 # _______________________________________________________________________
 # Test rm safety on actual storage element
@@ -10,10 +11,14 @@ import os, os.path as osp
 def test_rm_safety_xrd():
     run_rm_safety_test(seutils.XrdImplementation())
 
+@pytest.mark.real_integration
+def test_rm_safety_gfal():
+    run_rm_safety_test(seutils.GfalImplementation())
+
 def run_rm_safety_test(impl):
     if not impl.isdir('root://cmseos.fnal.gov//store/user/klijnsma/foo/bar'):
         impl.mkdir('root://cmseos.fnal.gov//store/user/klijnsma/foo/bar')
-    bl_backup = seutils.RM_BLACKLIST.copy()
+    bl_backup = copy.copy(seutils.RM_BLACKLIST)
     seutils.RM_BLACKLIST.extend(['/store/user/klijnsma/foo', '/store/user/klijnsma/foo/*'])
     try:
         with pytest.raises(seutils.RmSafetyTrigger):
@@ -47,10 +52,18 @@ def test_fake_integration_xrd():
     run_implementation_tests(seutils.XrdImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
     fakefs.deactivate_command_interception()
 
+def test_fake_integration_xrd():
+    activate_fake_internet()
+    run_implementation_tests(seutils.GfalImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
+    fakefs.deactivate_command_interception()
+
 @pytest.mark.real_integration
 def test_real_integration_xrd():
     run_implementation_tests(seutils.XrdImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
 
+@pytest.mark.real_integration
+def test_real_integration_gfal():
+    run_implementation_tests(seutils.GfalImplementation(), 'root://cmseos.fnal.gov//store/user/klijnsma/seutils_testdir')
 
 def run_implementation_tests(impl, remote_test_dir):
     '''Run integration tests in one order to not overload the SE'''
