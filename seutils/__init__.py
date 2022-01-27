@@ -1015,8 +1015,8 @@ def diff(left, right, stat=False, implementation=None):
         if not has_protocol(path):
             raise NotImplementedError('diff does not support local paths yet: {0}'.format(path))
 
-    contents_left = listdir_recursive(left)
-    contents_right = listdir_recursive(right)
+    contents_left = listdir_recursive(left, implementation=implementation)
+    contents_right = listdir_recursive(right, implementation=implementation)
 
     if stat:
         paths_left = [ n.path for n in contents_left ]
