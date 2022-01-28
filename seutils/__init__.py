@@ -775,7 +775,10 @@ def make_global_scope_command(cmd_name):
     """
     def wrapper(path, *args, **kwargs):
         implementation = kwargs.pop('implementation', None)
-        if implementation is None: implementation = best_implementation(cmd_name, path)
+        if implementation is None:
+            implementation = best_implementation(cmd_name, path)
+        elif is_string(implementation):
+            implementation = implementations[implementation]
         return getattr(implementation, cmd_name)(path, *args, **kwargs)
     return wrapper
         
