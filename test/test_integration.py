@@ -90,3 +90,35 @@ def run_implementation_tests(impl, remote_test_dir):
     impl.rm(remote_test_dir, recursive=True)
     assert not impl.isdir(remote_test_dir)
     seutils.RM_WHITELIST = []
+
+
+@pytest.mark.real_integration
+def test_diff_gfal():
+    def put_if_not_exists(path, contents):
+        if not seutils.isfile(path, implementation=seutils.gfal):
+            seutils.put(path,contents=contents, implementation=seutils.gfal)
+    put_if_not_exists(
+        'gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest/file1.txt',
+        contents='contents1'
+        )
+    put_if_not_exists(
+        'gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest/file2.txt',
+        contents='contents2'
+        )
+    put_if_not_exists(
+        'root://cmseos.fnal.gov//store/user/klijnsma/difftest/file1.txt',
+        contents='contents1'
+        )
+    if seutils.gfal.isfile('root://cmseos.fnal.gov//store/user/klijnsma/difftest/file2.txt'):
+        seutils.gfal.rm('root://cmseos.fnal.gov//store/user/klijnsma/difftest/file2.txt')
+    d = seutils.diff(
+            'gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest',
+            'root://cmseos.fnal.gov//store/user/klijnsma/difftest',
+            implementation=seutils.gfal
+            )
+    assert d == (
+        ['gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest/file1.txt'],
+        ['root://cmseos.fnal.gov//store/user/klijnsma/difftest/file1.txt'],
+        ['gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest/file2.txt'],
+        []
+        )
