@@ -46,3 +46,11 @@ def test_relpath():
         seutils.relpath('root://foo.bar.gov//foo/bar', '/foo')
     with pytest.raises(TypeError):
         seutils.relpath('root://foo.bar.gov//foo/bar', 'gsiftp://foo.bar.edu//foo')
+
+def test_get_depth():
+    assert seutils.get_depth('root://foo.bar.gov//') == 0
+    assert seutils.get_depth('root://foo.bar.gov//aaa') == 1
+    assert seutils.get_depth('root://foo.bar.gov//aaa/') == 2
+    assert seutils.get_depth('root://foo.bar.gov//aaa/a') == 2
+    assert seutils.get_depth('root://foo.bar.gov//aaa/a/..') == 1
+    assert seutils.get_depth('root://foo.bar.gov//aaa/a/../') == 2

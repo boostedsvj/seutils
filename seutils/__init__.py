@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
+from multiprocessing.sharedctypes import Value
 import os.path as osp
 import logging, subprocess, os, glob, time, datetime, argparse
 from contextlib import contextmanager
@@ -37,6 +38,11 @@ logger = setup_logger()
 def debug(flag=True):
     """Sets the logger level to debug (for True) or warning (for False)"""
     logger.setLevel(logging.DEBUG if flag else DEFAULT_LOGGING_LEVEL)
+
+def silent(flag=True):
+    """Disables the logger (for True) or sets it back to default (for False)"""
+    logger.setLevel(logging.CRITICAL+1 if flag else DEFAULT_LOGGING_LEVEL)
+
 
 DRYMODE = False
 def drymode(flag=True):
@@ -285,10 +291,46 @@ def has_protocol(filename):
 def is_ssh(path):
     return (':/' in path and not('://' in path))
 
+def is_valid_path(filename):
+    """
+    Checks whether a filename has a protocol, a double slash, and does not
+    start with a slash
+    """
+    return not(filename.startswith('/')) and has_protocol(filename) and '//' in filename.split('://',1)[1]
+
+def get_lfn(filename):
+    if is_ssh(filename):
+        return '/' + filename.split(':/')[1]
+    elif not is_valid_path(filename):
+        raise ValueError(
+            'Filename {} is not a properly formatted physical file name'.format(filename)
+            )
+    else:
+        return '/' + filename.split('://',1)[1].split('//',1)[1]
+
+def get_depth(filename):
+    """
+    Returns the depth of the logical filename.
+    Examples:
+    >>> get_lfn('root://foo.bar.gov//')
+    >>> 0
+    >>> get_lfn('root://foo.bar.gov//aaa')
+    >>> 1
+    >>> get_lfn('root://foo.bar.gov//aaa/')
+    >>> 2
+    >>> get_lfn('root://foo.bar.gov//aaa/a')
+    >>> 2
+    """
+    lfn = normpath(get_lfn(filename))
+    if lfn == '/':
+        return 0
+    return lfn.count('/') + int(filename.endswith('/'))
+
+
 def split_protocol_pfn(filename):
     """
     Splits protocol, server and logical file name from a physical file name.
-    Throws an exception of format-ensuring checks fail.
+    Throws an exception if format-ensuring checks fail.
     """
     if not has_protocol(filename):
         raise ValueError(
@@ -434,11 +476,10 @@ def iter_parent_dirs(path):
         previous_dir = dir
         dir = dirname(dir)
 
-def get_protocol(path, mgm=None):
+def get_protocol(path):
     """
     Returns the protocol contained in the path string
     """
-    path = format(path, mgm)
     return path.split('://')[0]
 
 def cmd_exists(executable):

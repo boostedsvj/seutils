@@ -17,6 +17,7 @@ setup(
     packages      = ['seutils'],
     zip_safe      = False,
     scripts       = [
+        'bin/seu-install-completion',
         'bin/seu-version',
         # SE interactions
         'bin/seu-ls', 'bin/seu-du',

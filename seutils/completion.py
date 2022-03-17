@@ -1,130 +1,172 @@
 #!/usr/bin/env python
 from __future__ import print_function
-import logging, os
-
-# complete -C /uscms/home/klijnsma/packages/toscript/completion.py to
-
+import logging, os, os.path as osp, fnmatch
+from nis import match
+from contextlib import contextmanager
 import sys, seutils
-logger = seutils.logger
-logger.setLevel(logging.ERROR)
-seutils.cli_detect_fnal()
 
-DO_LOGGING = False
+COMPLETION_TEST_MODE = None
+DEFAULT_MGMS = None
 
-def completion_hook(cmd, prev_word, curr_word, line):
-    log('\ncmd="{}" prev_word="{}" curr_word="{}" line="{}"'.format(cmd, prev_word, curr_word, line))
-    hook = cmd_to_hook.get(cmd, None)
-    if not hook:
-        print('Not recognizing command {}'.format(cmd))
-        return
-    hook(cmd, prev_word, curr_word, line)
 
-def cannot_expand():
-    logger.error(
-        'Cannot expand: Start paths with the full mgm (root://...) or set the %s environment variable',
-        seutils.MGM_ENV_KEY
-        )
+def all_equal_ivo(lst):
+    """Fast way to check if a list has all the same elements"""
+    return not lst or lst.count(lst[0]) == len(lst)
 
-def log(*args, **kwargs):
-    if DO_LOGGING:
-        logger.error(*args, **kwargs)
 
-def complete_ls(cmd, prev_word, curr_word, line):
+def find_longest_matching_start(strings):
+    """Find the longest common starting substring"""
+    i_column = 0
+    for i_column, column in enumerate(zip(*strings)):
+        if not all_equal_ivo(column):
+            return strings[0][:i_column]
+    else:
+        return strings[0][:i_column+1]
+
+
+def enable_logging(fn):
+    """
+    Function wrapper that enables writing debug output to `debug_completion.log`
+    """
+    def wrapper(*args, **kwargs):
+        if COMPLETION_TEST_MODE:
+            with open('debug_completion.log', 'w') as f:
+                def log(message):
+                    print(message, file=f)
+                kwargs['log'] = log
+                return fn(*args, **kwargs)
+        else:
+            return fn(*args, **kwargs)
+    return wrapper
+
+
+def log(message):
+    pass
+
+
+def seu_ls(cmd, curr_word, prev_word, line, log=log):
     if line.strip() == 'seu-ls':
         # Only the plain command is being expanded
-        if seutils.DEFAULT_MGM is None:
-            cannot_expand()
+        if len(DEFAULT_MGMS) == 1:
+            log('Base command; expanding to the only default mgm %s' % DEFAULT_MGMS[0])
+            return DEFAULT_MGMS[0]
         else:
-            print(seutils.cli_flexible_format('').strip())
+            log('Base command; len(mgms)=%s, cannot expand' % len(DEFAULT_MGMS))
         return
     elif line.endswith(' '):
         log('Already expanded')
-        # Already expanded
         return
-    else:
-        # Get the thing to expand
-        raw_lfn = line.split()[-1].strip()
+    # Get the thing to expand
+    path = line.strip().split()[-1]
+    return expand_path(path)
 
-    log('Raw lfn %s', raw_lfn)
-    # Do some formatting
-    if seutils.is_ssh(raw_lfn):
-        lfn = raw_lfn
-    elif not seutils.has_protocol(raw_lfn):
-        if seutils.DEFAULT_MGM is None:
-            cannot_expand()
-            return
-        lfn = seutils.cli_flexible_format(raw_lfn)
-    else:
-        lfn = raw_lfn
-    log('Using lfn %s', lfn)
+
+def expand_path(path):
+    log('Path to expand: %s' % path)
+
+    # For debugging only:
+    if COMPLETION_TEST_MODE:
+        try:
+            log(f'dirname={seutils.dirname(path)}')
+            log(f'lfn={seutils.get_lfn(path)}')
+        except Exception:
+            pass
+
+    # Do expansion to the registerd default mgms
+    if not(seutils.is_valid_path(path)):
+        log(f'{path=} is not valid')
+        matching_mgms = [ mgm for mgm in DEFAULT_MGMS if fnmatch.fnmatch(mgm, path+'*') ]
+        return format_matches(path, matching_mgms, log=log)
+    elif seutils.get_depth(path) <= 1:
+        log('path=%s has depth <= 1' % path)
+        path = seutils.normpath(path)
+        matching_mgms = [ mgm for mgm in DEFAULT_MGMS if fnmatch.fnmatch(mgm, path+'*') ]
+        return format_matches(path, matching_mgms, log=log)
 
     # Do expansion
-    if lfn.endswith('/'):
-        contents = seutils.listdir(lfn)
+    log(f'{path=} is valid, fetching contents')
+    if path.endswith('/'):
+        log(f'Doing seutils.listdir("{path}")')
+        contents = seutils.listdir(path)
     else:
-        contents = seutils.ls_wildcard(lfn + ('' if lfn.endswith('*') else '*'))
+        log(f'Doing seutils.ls_wildcard("{path}*")')
+        contents = seutils.ls_wildcard(path + ('' if path.endswith('*') else '*'))
 
-    # Print carefully
-    if len(contents) == 0:
-        log('No contents to expand')
-        return
+    return format_matches(path, contents, add_trailing_slash=True, log=log)
 
-    elif len(contents) > 1:
-        log('Multiple contents')
 
-        expand_to = find_longest_matching_start(contents)
-        log('Maximum expand string: %s', expand_to)
-
-        if expand_to.strip() == lfn.strip():
-            log('lfn %s already maximally expanded, printing contents', lfn)
-            print(' ' + '\n'.join(contents))
-        else:
-            log('Only printing expansion %s', expand_to)
-            if ':' in raw_lfn:
-                print(expand_to.split(':')[-1].strip())
-            else:
-                print(expand_to.strip())
+def format_matches(curr_word, matches, add_trailing_slash=False, log=log):
+    """
+    Given the `matches` for the `curr_word`, determines what exactly should be printed.
+    """
+    if curr_word.strip() == '':
+        raise Exception('Do not use function `format_matches` with an empty curr_word')
+    elif len(matches) == 0:
+        log('No matches to expand for curr_word %s' % curr_word)
+        return None
+    elif len(matches) == 1:
+        match = matches[0]
+        log('Single match for curr_word %s: %s ; expanding to it' % (curr_word, match))
+        if add_trailing_slash and seutils.isdir(match) and not match.endswith('/'):
+            match += '/'
+        match = match.split(':',1)[1] if ':' in curr_word else match
+        log('Final expansion: %s' % match)
+        return match
     else:
-        log('Single content')
-        c = contents[0]
-        if seutils.isdir(c): c += '/'
-        # The ':' counts as a splitting in `complete`... Only print whatever comes after the ':'
-        if ':' in raw_lfn:
-            print(c.split(':')[-1])
+        log('Processing the following matches for curr_word %s: %s' % (curr_word, ', '.join(matches)))
+        expand_to = find_longest_matching_start(matches)
+        log('Longest matching start: %s' % expand_to)
+        if expand_to.strip() == curr_word.strip():
+            log('curr_word %s already maximally expanded, printing contents' % curr_word)
+            return ' ' + '\n'.join(matches)
         else:
-            print(c)
+            log('Expanding to longest matching start %s' % expand_to)
+            expand_to = expand_to.split(':',1)[1] if ':' in curr_word else expand_to
+            log((f'Final expansion: {expand_to}'))
+            return expand_to
 
 
-def find_longest_matching_start(lines):
-    """
-    Finds longest expansionable string
-    """
-    max_len = max(map(len, lines))
+@enable_logging
+def completion_hook(cmd, curr_word, prev_word, line, log=log):
+    log('The following default mgms were found: %s' % ', '.join(DEFAULT_MGMS))
+    result = None
     try:
-        break_now = False
-        for i in range(max_len):
-            char = lines[0][i]
-            for line in lines:
-                if line[i] != char:
-                    # Matching breaks at character index i
-                    break_now = True
-                    break
-            if break_now: break
-    except IndexError:
-        pass
-    return lines[0][:i]
+        log(f'{cmd=}, {curr_word=}, {prev_word=}, {line=}')
+        if cmd == 'seu-ls':
+            result = seu_ls(cmd, curr_word, prev_word, line, log=log)
+    except Exception as e:
+        log('Exception occured: ')
+        log(e)
+        raise 
+    if result is not None: print(result)
+            
 
-cmd_to_hook = {
-    'seu-ls' : complete_ls,
-    }
+def activate_fake_internet():
+    sys.path.append(osp.join(osp.dirname(osp.dirname(osp.abspath(seutils.__file__))), 'test'))
+    import fakefs
+    fi = fakefs.FakeInternet()
+    fs = fakefs.FakeRemoteFS('root://foo.bar.gov')
+    fs.put('/store/user/test.file', isdir=False, content='testcontent')
+    fs.put('/store/user/other.file', isdir=False, content='testcontent')
+    fs.put('/store/user/testdir', isdir=True, content='testcontent')
+    fs.put('/store/user/testdir/file.file', isdir=False, content='testcontent')
+    fi.fs = {fs.mgm : fs}
+    fakefs.activate_command_interception(fi)
+
 
 def main():
-    args = sys.argv
-    cmd = args[1]
-    prev_word = args[3]
-    curr_word = args[2]
-    line = os.environ['COMP_LINE']
-    completion_hook(cmd, prev_word, curr_word, line)
+    seutils.silent()
+    global COMPLETION_TEST_MODE
+    global DEFAULT_MGMS
+
+    COMPLETION_TEST_MODE = os.environ.get('COMPLETION_TEST_MODE', None) == '1'
+    if COMPLETION_TEST_MODE: activate_fake_internet()
+
+    DEFAULT_MGMS = os.environ.get('SEU_DEFAULT_MGM', '').split(',')
+    if DEFAULT_MGMS == ['']: DEFAULT_MGMS = []
+    DEFAULT_MGMS = [mgm.rstrip('/') + '//store/' for mgm in DEFAULT_MGMS]
+
+    completion_hook(*sys.argv[1:], os.environ['COMP_LINE'])
 
 if __name__ == "__main__":
     main()
