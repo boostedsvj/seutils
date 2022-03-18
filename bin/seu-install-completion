@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
-COMPLETION_FILE=$(python -c "from __future__ import print_function; import seutils; print(seutils.__file__.replace('__init__', 'completion'))")
-echo "Copy the following into your .bashrc:"
+COMPLETION_FILE=$(python -c "from __future__ import print_function; import os; import seutils; print(os.path.abspath(seutils.__file__).replace('__init__', 'completion').replace('.pyc', '.py'))")
+echo "Run the following (or copy the following into your .bashrc):"
 echo "complete -o nospace -C $COMPLETION_FILE seu-ls"
