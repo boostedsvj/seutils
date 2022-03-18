@@ -1,7 +1,7 @@
 import pytest
 import random
 import seutils
-import fakefs
+from seutils import fakefs
 
 @pytest.fixture
 def fs():

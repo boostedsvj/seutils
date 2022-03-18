@@ -1,4 +1,5 @@
-import seutils, pytest, fakefs
+import seutils, pytest
+from seutils import fakefs
 import sys
 from contextlib import contextmanager
 

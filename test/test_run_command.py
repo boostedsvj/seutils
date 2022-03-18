@@ -1,5 +1,4 @@
 import pytest
-import fakefs
 import seutils
 
 def test_run_command_rcode_and_output():

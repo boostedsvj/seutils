@@ -1,4 +1,3 @@
-from datetime import date
 import seutils, pytest
 import seutils.path as seup
 

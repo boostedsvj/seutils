@@ -1,4 +1,5 @@
-import seutils, fakefs, pytest, os, os.path as osp
+import seutils, pytest, os, os.path as osp
+from seutils import fakefs
 
 def get_fake_internet():
     fi = fakefs.FakeInternet()

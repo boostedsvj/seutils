@@ -37,7 +37,7 @@ def test_heylook():
     assert bash_complete('heylook ', py_completer_file) == ["a", "bunch", "of", "potential", "matches"]
     assert bash_complete('heylook b', py_completer_file) == ['bunch']
 
-import seutils, fakefs, pytest
+import seutils
 completion_file = seutils.__file__.replace('__init__', 'completion').replace('.pyc', '.py')
 
 def test_longest_matching():

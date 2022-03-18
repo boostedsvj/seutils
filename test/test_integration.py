@@ -1,6 +1,6 @@
 import pytest
-import fakefs
 import seutils
+from seutils import fakefs
 import os, os.path as osp
 import copy
 
