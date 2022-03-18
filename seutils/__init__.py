@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
-from multiprocessing.sharedctypes import Value
 import os.path as osp
-import logging, subprocess, os, glob, time, datetime, argparse
+import logging, subprocess, os, time
 from contextlib import contextmanager
 
 from . import path as seup
@@ -168,7 +167,7 @@ def listdir_check_isdir(fn):
     return wrapper
 
 
-def run_command_rcode_and_output(cmd, env=None, dry=None):
+def run_command_rcode_and_output(cmd, env=None, dry=None, stdout=None, stderr=None):
     """Runs a command and captures output.
     Returns return code and captured output.
     """
@@ -178,8 +177,8 @@ def run_command_rcode_and_output(cmd, env=None, dry=None):
     if dry: return 0, '<dry output>'
     process = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdout=(subprocess.PIPE if stdout is None else stdout),
+        stderr=(subprocess.STDOUT if stderr is None else stderr),
         env=env,
         universal_newlines=True,
         )

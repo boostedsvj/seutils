@@ -1,9 +1,5 @@
-import enum
-import pathlib
 import os, os.path as osp
-import unittest
 import shlex
-import sys
 import subprocess
 
 def bash_complete(comp_line, comp_exe, default_mgm=None):
@@ -27,22 +23,22 @@ def bash_complete(comp_line, comp_exe, default_mgm=None):
         prev_word = cmd_line_args[-2] if len(cmd_line_args) >= 2 else ""
     os.environ.update({"COMP_LINE": comp_line, "COMP_POINT": comp_point, 'COMPLETION_TEST_MODE': '1'})
     if default_mgm is not None: os.environ['SEU_DEFAULT_MGM'] = default_mgm
-    finished_process = subprocess.run(
+    output = seutils.run_command(
         [comp_exe, cmd, curr_word, prev_word],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        universal_newlines=True,
         )
-    return finished_process.stdout.strip()
+    return [l.strip() for l in output]
+
 
 test_dir = osp.dirname(osp.abspath(__file__))
 
 def test_heylook():
     py_completer_file = osp.join(test_dir, 'heylook_completer.py')
-    assert bash_complete('heylook ', py_completer_file).splitlines() == ["a", "bunch", "of", "potential", "matches"]
-    assert bash_complete('heylook b', py_completer_file).splitlines() == ['bunch']
+    assert bash_complete('heylook ', py_completer_file) == ["a", "bunch", "of", "potential", "matches"]
+    assert bash_complete('heylook b', py_completer_file) == ['bunch']
 
 import seutils, fakefs, pytest
-completion_file = seutils.__file__.replace('__init__', 'completion')
+completion_file = seutils.__file__.replace('__init__', 'completion').replace('.pyc', '.py')
 
 def test_longest_matching():
     from seutils.completion import find_longest_matching_start
@@ -56,7 +52,7 @@ def test_longest_matching():
 
 def bash_complete2(line, default_mgm='root://foo.bar.gov/'):
     """Thin wrapper around `bash_complete` that fills in some default info for testing"""
-    return bash_complete(line, completion_file, default_mgm).splitlines()
+    return bash_complete(line, completion_file, default_mgm)
 
 
 def test_basic_path_completion():

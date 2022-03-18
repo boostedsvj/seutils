@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
-import logging, os, os.path as osp, fnmatch
-from nis import match
-from contextlib import contextmanager
+import os, os.path as osp, fnmatch
 import sys, seutils
 
 COMPLETION_TEST_MODE = None
@@ -172,7 +170,7 @@ def main():
     if DEFAULT_MGMS == ['']: DEFAULT_MGMS = []
     DEFAULT_MGMS = [mgm.rstrip('/') + '//store/' for mgm in DEFAULT_MGMS]
 
-    completion_hook(*sys.argv[1:], os.environ['COMP_LINE'])
+    completion_hook(sys.argv[1], sys.argv[2], sys.argv[3], os.environ['COMP_LINE'])
 
 if __name__ == "__main__":
     main()
