@@ -67,14 +67,14 @@ def expand_path(path, log=log):
     # For debugging only:
     if COMPLETION_TEST_MODE:
         try:
-            log(f'dirname={seutils.path.dirname(path)}')
-            log(f'lfn={seutils.path.get_lfn(path)}')
+            log('dirname={}'.format(seutils.path.dirname(path)))
+            log('lfn={}'.format(seutils.path.get_lfn(path)))
         except Exception:
             pass
 
     # Do expansion to the registerd default mgms
     if not(seutils.path.is_valid_path(path)):
-        log(f'{path=} is not valid')
+        log('%s is not valid' % path)
         matching_mgms = [ mgm for mgm in DEFAULT_MGMS if fnmatch.fnmatch(mgm, path+'*') ]
         return format_matches(path, matching_mgms, log=log)
 
@@ -88,12 +88,12 @@ def expand_path(path, log=log):
         return format_matches(path, matching_mgms, log=log)
 
     # Do expansion
-    log(f'{path=} is valid, fetching contents')
+    log('%s is valid, fetching contents' % path)
     if path.endswith('/'):
-        log(f'Doing seutils.listdir("{path}")')
+        log('Doing seutils.listdir("%s")' % path)
         contents = seutils.listdir(path)
     else:
-        log(f'Doing seutils.ls_wildcard("{path}*")')
+        log('Doing seutils.ls_wildcard("%s*")' % path)
         contents = seutils.ls_wildcard(path + ('' if path.endswith('*') else '*'))
 
     return format_matches(path, contents, add_trailing_slash=True, log=log)
@@ -126,7 +126,7 @@ def format_matches(curr_word, matches, add_trailing_slash=False, log=log):
         else:
             log('Expanding to longest matching start %s' % expand_to)
             expand_to = expand_to.split(':',1)[1] if ':' in curr_word else expand_to
-            log((f'Final expansion: {expand_to}'))
+            log(('Final expansion: %s' % expand_to))
             return expand_to
 
 
@@ -135,7 +135,7 @@ def completion_hook(cmd, curr_word, prev_word, line, log=log):
     log('The following default mgms were found: %s' % ', '.join(DEFAULT_MGMS))
     result = None
     try:
-        log(f'{cmd=}, {curr_word=}, {prev_word=}, {line=}')
+        log('cmd={}, curr_word={}, prev_word={}, line={}'.format(cmd, curr_word, prev_word, line))
         if cmd == 'seu-ls':
             result = seu_ls(cmd, curr_word, prev_word, line, log=log)
     except Exception:
