@@ -33,7 +33,7 @@ class PyxrdImplementation(seutils.Implementation):
 
     def mkdir(self, path):
         from XRootD.client import flags
-        mgm, directory = seutils.split_mgm(path)
+        mgm, directory = seutils.path.split_mgm(path)
         client = self.get_client(mgm)
         seutils.logger.warning('Creating directory on SE: {0}'.format(path))
         status, _ = client.mkdir(directory, flags.MkDirFlags.MAKEPATH)
@@ -45,7 +45,7 @@ class PyxrdImplementation(seutils.Implementation):
         seutils.logger.info('Created directory %s: %s', directory, status)
 
     def stat(self, path):
-        mgm, lpath = seutils.split_mgm(path)
+        mgm, lpath = seutils.path.split_mgm(path)
         client = self.get_client(mgm)
         status, statinfo = client.stat(lpath)
         if not status.ok:
@@ -58,7 +58,7 @@ class PyxrdImplementation(seutils.Implementation):
         if not assume_directory and not self.isdir(path):
             raise Exception('Path {0} is not a directory'.format(path))
         # Retrieve listobj
-        mgm, directory = seutils.split_mgm(path)
+        mgm, directory = seutils.path.split_mgm(path)
         status, listobj = self.get_client(mgm).dirlist(directory, flags.DirListFlags.STAT if stat else 0)
         if not status.ok:
             raise ValueError(

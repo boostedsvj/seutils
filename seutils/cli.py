@@ -43,7 +43,7 @@ class ParserSingleRemotePath(Parser):
 
     def parse_args(self, *args, **kwargs):
         parsed_args = super(ParserSingleRemotePath, self).parse_args(*args, **kwargs)
-        if not seutils.has_protocol(parsed_args.path):
+        if not seutils.path.has_protocol(parsed_args.path):
             raise TypeError('Path {0} is not remote'.format(parsed_args.path))
         elif '*' in parsed_args.path:
             raise TypeError('Path {0}: Wildcards not accepted'.format(parsed_args.path))
@@ -62,7 +62,7 @@ class ParserMultipleRemotePaths(Parser):
         parsed_args = super(ParserMultipleRemotePaths, self).parse_args(*args, **kwargs)
         paths = []
         for path in parsed_args.paths:
-            if not seutils.has_protocol(path):
+            if not seutils.path.has_protocol(path):
                 raise TypeError('Path {0} is not remote'.format(path))
             if disallow_wildcards and '*' in path:
                 raise TypeError('Wildcards not allowed')
@@ -83,16 +83,16 @@ def cli_detect_fnal():
         seutils.set_default_mgm(mgm)
 
 def cli_flexible_format(lfn, mgm=None):
-    if seutils.is_ssh(lfn): return lfn
+    if seutils.path.is_ssh(lfn): return lfn
     cli_detect_fnal()
-    if not seutils.has_protocol(lfn) and not lfn.startswith('/'):
+    if not seutils.path.has_protocol(lfn) and not lfn.startswith('/'):
         try:
             prefix = '/store/user/' + os.environ['USER']
             seutils.logger.warning('Pre-fixing %s', prefix)
             lfn = os.path.join(prefix, lfn)
         except KeyError:
             pass
-    if seutils.has_protocol(lfn):
+    if seutils.path.has_protocol(lfn):
         return format(lfn)
     else:
         return format(lfn, mgm)

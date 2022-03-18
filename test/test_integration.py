@@ -82,7 +82,7 @@ def run_implementation_tests(impl, remote_test_dir):
     assert impl.isfile(remote_test_file_copy)
     assert impl.cat(remote_test_file_copy) == 'testcontent'
     # Cleanup
-    seutils.RM_WHITELIST = [seutils.split_mgm(remote_test_dir)[1]]
+    seutils.RM_WHITELIST = [seutils.path.split_mgm(remote_test_dir)[1]]
     impl.rm(remote_test_file)
     assert not impl.isfile(remote_test_file)
     impl.rm(remote_test_file_copy)

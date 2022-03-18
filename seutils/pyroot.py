@@ -1,8 +1,5 @@
 import seutils
-import os.path as osp
 from contextlib import contextmanager
-from seutils import run_command, get_exitcode, Inode, split_mgm
-logger = seutils.logger
 
 IS_INSTALLED = None
 def is_installed():

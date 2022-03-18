@@ -100,7 +100,7 @@ def test_du(fake_internet, implementation):
         return ret
 
     assert extract_size_path(capture(
-        ['seu-du', 'root://foo.bar.gov//foo/bar/', '-i', implementation]
+        ['seu-du', 'root://foo.bar.gov//foo/bar', '-i', implementation]
         )) == [(dir1.size_human, dir1.path)]
     assert extract_size_path(capture(
         ['seu-du', 'root://foo.bar.gov//foo/bar/*', '-i', implementation, '-s']

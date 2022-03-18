@@ -5,15 +5,18 @@ import os.path as osp
 import logging, subprocess, os, glob, time, datetime, argparse
 from contextlib import contextmanager
 
+from . import path as seup
+
 N_COPY_ATTEMPTS = 1
 DEFAULT_LOGGING_LEVEL = logging.WARNING
 N_SECONDS_SLEEP = 10
-
 INCLUDE_DIR = osp.join(osp.abspath(osp.dirname(__file__)), "include")
+
 
 def version():
     with open(osp.join(INCLUDE_DIR, "VERSION"), "r") as f:
         return(f.read().strip())
+
 
 def setup_logger(name='seutils'):
     if name in logging.Logger.manager.loggerDict:
@@ -35,9 +38,11 @@ def setup_logger(name='seutils'):
     return logger
 logger = setup_logger()
 
+
 def debug(flag=True):
     """Sets the logger level to debug (for True) or warning (for False)"""
     logger.setLevel(logging.DEBUG if flag else DEFAULT_LOGGING_LEVEL)
+
 
 def silent(flag=True):
     """Disables the logger (for True) or sets it back to default (for False)"""
@@ -49,6 +54,7 @@ def drymode(flag=True):
     global DRYMODE
     DRYMODE = flag
 
+
 @contextmanager
 def drymode_context(flag=True):
     global DRYMODE
@@ -58,6 +64,7 @@ def drymode_context(flag=True):
         yield DRYMODE
     finally:
         DRYMODE = _saved_DRYMODE
+
 
 def is_string(string):
     """
@@ -70,6 +77,7 @@ def is_string(string):
         basestring = str
     return isinstance(string, basestring)
 
+
 ENV = None
 def set_env(env):
     """
@@ -77,6 +85,7 @@ def set_env(env):
     """
     global ENV
     ENV = env
+
 
 @contextmanager
 def env_context(env):
@@ -91,6 +100,7 @@ def env_context(env):
     finally:
         ENV = old_ENV
 
+
 def add_env_kwarg(fn):
     """
     Function decorator that gives the function the `env` keyword argument
@@ -103,6 +113,7 @@ def add_env_kwarg(fn):
             return fn(*args, **kwargs)
     return wrapper
 
+
 RM_BLACKLIST = [
     '/',
     '/store',
@@ -111,6 +122,7 @@ RM_BLACKLIST = [
     ]
 RM_WHITELIST = []
 
+
 def rm_safety(fn):
     """
     Safety wrapper around any rm function: Raise an exception for some paths
@@ -118,10 +130,10 @@ def rm_safety(fn):
     import re
     def wrapper(*args, **kwargs):
         path = args[1]
-        if not has_protocol(path):
+        if not seup.has_protocol(path):
             logger.error('Remote rm operation called on local path')
             raise RmSafetyTrigger(path)
-        path = split_mgm(normpath(path))[1]
+        path = seup.split_mgm(seup.normpath(path))[1]
         depth = path.count('/')
         logger.debug('In rm_safety wrapper')
         # Check if the passed `path` is in the blacklist:
@@ -150,9 +162,11 @@ def listdir_check_isdir(fn):
     def wrapper(*args, **kwargs):
         if not kwargs.pop('assume_isdir', False):
             if not args[0].isdir(args[1]):
-                raise Exception('Cannot listdir {0}: not a directory'.format(args[1]))
+                node = args[0].stat(args[1])
+                raise Exception('Cannot listdir {0}: not a directory; {1}'.format(args[1], node))
         return fn(*args, **kwargs)
     return wrapper
+
 
 def run_command_rcode_and_output(cmd, env=None, dry=None):
     """Runs a command and captures output.
@@ -178,6 +192,7 @@ def run_command_rcode_and_output(cmd, env=None, dry=None):
     process.wait()
     return process.returncode, output
 
+
 def run_command_rcode_and_output_with_retries(cmd, *args, **kwargs):
     """
     Wrapper around run_command_rcode_and_output that repeats on a non-zero exit code
@@ -201,6 +216,7 @@ def run_command_rcode_and_output_with_retries(cmd, *args, **kwargs):
     else:
         if n_attempts > 1: logger.info('Non-zero return code after %s attempt(s)!', n_attempts)
         return rcode, output
+
 
 def run_command(cmd, *args, **kwargs):
     """
@@ -226,6 +242,7 @@ def run_command(cmd, *args, **kwargs):
         else:
             raise NonZeroExitCode(rcode, cmd)
 
+
 def get_exitcode(cmd, *args, **kwargs):
     """
     Runs a command and returns the exit code.
@@ -233,6 +250,7 @@ def get_exitcode(cmd, *args, **kwargs):
     rcode, _ = run_command_rcode_and_output(cmd, *args, **kwargs)
     logger.debug('Got exit code %s', rcode)
     return rcode
+
 
 def bytes_to_human_readable(num, suffix='B'):
     """
@@ -244,243 +262,13 @@ def bytes_to_human_readable(num, suffix='B'):
         num /= 1024.0
     return '{0:3.1f} {1}b'.format(num, 'Y')
 
+
 def is_macos():
     """
     Checks if the platform is Mac OS
     """
     return os.uname()[0] == 'Darwin'
 
-# _______________________________________________________
-# Path management
-
-DEFAULT_MGM = None
-MGM_ENV_KEY = 'SEU_DEFAULT_MGM'
-
-def set_default_mgm(mgm):
-    """
-    Sets the default mgm
-    """
-    global DEFAULT_MGM
-    DEFAULT_MGM = mgm
-    logger.info('Default mgm set to %s', mgm)
-
-def read_default_mgm_from_env():
-    if MGM_ENV_KEY in os.environ: set_default_mgm(os.environ[MGM_ENV_KEY])
-# Set the default once at import time
-read_default_mgm_from_env()
-
-def get_default_mgm():
-    if DEFAULT_MGM is None:
-        raise RuntimeError(
-            'A request relied on the default mgm to be set. '
-            'Either use `seutils.set_default_mgm` or '
-            'pass use the full path (starting with "root:") '
-            'in your request.'
-            )
-    return DEFAULT_MGM
-
-PROTOCOLS = [ 'root', 'srm', 'gsiftp', 'dcap' ] # Probably to be expanded
-
-def has_protocol(filename):
-    """
-    Checks whether the filename contains a protocol.
-    Currently a very basic string check, which so far has been enough
-    """
-    return ('://' in filename)
-
-def is_ssh(path):
-    return (':/' in path and not('://' in path))
-
-def is_valid_path(filename):
-    """
-    Checks whether a filename has a protocol, a double slash, and does not
-    start with a slash
-    """
-    return not(filename.startswith('/')) and has_protocol(filename) and '//' in filename.split('://',1)[1]
-
-def get_lfn(filename):
-    if is_ssh(filename):
-        return '/' + filename.split(':/')[1]
-    elif not is_valid_path(filename):
-        raise ValueError(
-            'Filename {} is not a properly formatted physical file name'.format(filename)
-            )
-    else:
-        return '/' + filename.split('://',1)[1].split('//',1)[1]
-
-def get_depth(filename):
-    """
-    Returns the depth of the logical filename.
-    Examples:
-    >>> get_lfn('root://foo.bar.gov//')
-    >>> 0
-    >>> get_lfn('root://foo.bar.gov//aaa')
-    >>> 1
-    >>> get_lfn('root://foo.bar.gov//aaa/')
-    >>> 2
-    >>> get_lfn('root://foo.bar.gov//aaa/a')
-    >>> 2
-    """
-    lfn = normpath(get_lfn(filename))
-    if lfn == '/':
-        return 0
-    return lfn.count('/') + int(filename.endswith('/'))
-
-
-def split_protocol_pfn(filename):
-    """
-    Splits protocol, server and logical file name from a physical file name.
-    Throws an exception if format-ensuring checks fail.
-    """
-    if not has_protocol(filename):
-        raise ValueError(
-            'Attempted to get protocol from {0}, but there'
-            ' does not seem to be any.'
-            .format(filename)
-            )
-    protocol, rest = filename.split('://',1)
-    if not '//' in rest:
-        raise ValueError(
-            'Could not determine server and logical file name from {0}'
-            .format(filename)
-            )
-    server, lfn = rest.split('//',1)
-    lfn = '/' + lfn # Restore the opening slash that was dropped in the split
-    return protocol, server, lfn
-
-def _split_mgm_pfn(filename):
-    """
-    Splits mgm and logical file name from a physical file name.
-    Throws an exception of format-ensuring checks fail.
-    """
-    protocol, server, lfn = split_protocol_pfn(filename)
-    return protocol + '://' + server, lfn
-
-def _join_protocol_server_lfn(protocol, server, lfn):
-    """
-    Joins protocol, server and lfn into a physical filename.
-    Ensures formatting to some extent.
-    """
-    protocol = protocol.replace(':', '') # Remove any ':' from the protocol
-    server = server.strip('/') # Strip trailing or opening slashes
-    if not lfn.startswith('/'):
-        raise ValueError(
-            'Logical file name {0} does not seem to be formatted correctly'
-            .format(lfn)
-            )
-    return protocol + '://' + server + '/' + lfn
-
-def split_mgm(path, mgm=None):
-    """
-    Returns the mgm and lfn that the user most likely intended to
-    if path has a protocol string (e.g. 'root://...'), the mgm is taken from the path
-    if mgm is passed, it is used as is
-    if mgm is passed AND the path starts with 'root://' AND the mgm's don't agree,
-      an exception is thrown
-    if mgm is None and path has no mgm, the default variable DEFAULT_MGM is taken
-    """
-    if has_protocol(path):
-        mgm_from_path, lfn = _split_mgm_pfn(path)
-        if not(mgm is None) and not mgm_from_path == mgm:
-            raise ValueError(
-                'Conflicting mgms determined from path and passed argument: '
-                'From path {0}: {1}, from argument: {2}'
-                .format(path, mgm_from_path, mgm)
-                )
-        mgm = mgm_from_path
-    elif mgm is None:
-        mgm = get_default_mgm()
-        lfn = path
-    else:
-        lfn = path
-    # Sanity check
-    if not lfn.startswith('/'):
-        raise ValueError(
-            'LFN {0} does not start with \'/\'; something is wrong'
-            .format(lfn)
-            )
-    return mgm, lfn
-
-def _join_mgm_lfn(mgm, lfn):
-    """
-    Joins mgm and lfn, ensures correct formatting.
-    Will throw an exception of the lfn does not start with '/'
-    """
-    if not lfn.startswith('/'):
-        raise ValueError(
-            'This function expects filenames that start with \'/\''
-            )
-    if not mgm.endswith('/'): mgm += '/'
-    # logger.error('mgm=%s lfn=%s', mgm, lfn)
-    return mgm + lfn
-
-def format(path, mgm=None):
-    """
-    Formats a path to ensure it is a path on the SE.
-    Can take:
-    - Just path starting with 'root:' - nothing really happens
-    - Just path starting with '/' - the default mgm is used
-    - Path starting with 'root:' and an mgm - an exception is thrown in case of conflict
-    - Path starting with '/' and an mgm - mgm and path are joined
-    """
-    if is_ssh(path): return path
-    mgm, lfn = split_mgm(path, mgm=mgm)
-    lfn = osp.normpath(lfn)
-    return _join_mgm_lfn(mgm, lfn)
-
-def dirname(path):
-    """
-    Like osp.dirname, but works with an mgm.
-    """
-    is_remote = has_protocol(path)
-    if is_remote:
-        mgm, path = split_mgm(path)
-    path = osp.dirname(osp.normpath(path))
-    return format(path, mgm) if is_remote else path
-
-def normpath(path):
-    """
-    Like osp.normpath, but works with an mgm.
-    """
-    is_remote = has_protocol(path)
-    if is_remote:
-        mgm, path = split_mgm(path)
-    path = osp.normpath(path)
-    return format(path, mgm) if is_remote else path
-
-def relpath(path, start):
-    """
-    Like osp.relpath, but works with an mgm.
-    """
-    if has_protocol(path) != has_protocol(start):
-        raise TypeError('{0} / {1}: either both or neither must have mgms'.format(path, start))
-    mgm1 = ''
-    mgm2 = ''
-    if has_protocol(path): mgm1, path = split_mgm(path)
-    if has_protocol(start): mgm2, start = split_mgm(start)
-    if mgm1 != mgm2:
-        raise TypeError('mgm mismatch: {0} vs. {1}'.format(mgm1, mgm2))
-    path = osp.normpath(path)
-    return osp.relpath(path, start)
-
-def iter_parent_dirs(path):
-    """
-    Iterates through all the parent directories of a path
-    E.g.:
-    `'/foo/bar'` --> `['/foo', '/']`
-    """
-    dir = dirname(path)
-    previous_dir = None
-    while dir != previous_dir:
-        yield dir
-        previous_dir = dir
-        dir = dirname(dir)
-
-def get_protocol(path):
-    """
-    Returns the protocol contained in the path string
-    """
-    return path.split('://')[0]
 
 def cmd_exists(executable):
     """
@@ -501,7 +289,7 @@ class Inode(object):
         return stat(path)
 
     def __init__(self, path, modtime, isdir, size):
-        self.path = normpath(path)
+        self.path = seup.normpath(path)
         self.modtime = modtime
         self.isdir = isdir
         self.size = size
@@ -520,15 +308,15 @@ class Inode(object):
 
     @property
     def dirname(self):
-        return dirname(self.path)
+        return seup.dirname(self.path)
 
     @property
     def path_no_mgm(self):
-        return split_mgm(self.path)[1]
+        return seup.split_mgm(self.path)[1]
 
     @property
     def mgm(self):
-        return split_mgm(self.path)[0]
+        return seup.split_mgm(self.path)[0]
 
     def __repr__(self):
         if len(self.path) > 40:
@@ -573,128 +361,7 @@ class NonZeroExitCode(subprocess.CalledProcessError):
 
 
 # _______________________________________________________
-# Cache
-
-USE_CACHE = False
-CACHEDIR = osp.abspath('.seutils-cache')
-CACHES = {}
-
-def use_cache(flag=True):
-    """
-    Convenience function to turn on and off caching
-    """
-    global USE_CACHE
-    USE_CACHE = flag
-
-def make_cache(subcache_name, make_if_not_exist=True):
-    """
-    Returns a FileCache object. Will be created if it doesn't exist already
-    """
-    if not USE_CACHE: return
-    global CACHES
-    if not subcache_name in CACHES:
-        from .cache import FileCache
-        cache = FileCache(subcache_name, app_cache_dir=CACHEDIR)
-        CACHES[subcache_name] = cache
-    return CACHES[subcache_name]
-
-def read_cache(subcache_name, key):
-    """
-    Attempts to get a value from a cache. Returns None if it was not found
-    """
-    if not USE_CACHE: return None
-    val = make_cache(subcache_name).get(key, None)
-    if not(val is None): logger.debug('Using cached result for %s from cache %s', key, subcache_name)
-    return val
-
-_LAST_CACHE_WRITE = None
-def write_cache(subcache_name, key, value):
-    """
-    Writes a value to a cache
-    """
-    if USE_CACHE:
-        logger.debug('Writing key %s to cache %s', key, subcache_name)
-        subcache = make_cache(subcache_name)
-        subcache[key] = value
-        subcache.sync()
-        global _LAST_CACHE_WRITE
-        _LAST_CACHE_WRITE = datetime.datetime.now()
-
-def cache(fn):
-    """
-    Function decorator to cache output of certain commands
-    """
-    cache_name = 'seutils-cache.' + fn.__name__
-    def wrapper(path, *args, **kwargs):
-        # Cache is basically a key-value dump; determine the key to use
-        # For most purposes, just the path works well enough
-        cache_key = fn.keygen(path, *args, **kwargs) if hasattr(fn, 'keygen') else path.strip()
-        # Try to read the cache; if not possible, evaluate cmd and store the result
-        val = read_cache(cache_name, cache_key)
-        if val is None:
-            val = fn(path, *args, **kwargs)
-            write_cache(cache_name, cache_key, val)
-        return val
-    return wrapper
-
-_LAST_TARBALL_CACHE = None
-_LAST_TARBALL_PATH = None
-def tarball_cache(dst='seutils-cache.tar.gz', only_if_updated=False):
-    """
-    Dumps the cache to a tarball.
-    If only_if_updated is True, an additional check is made to see whether
-    the last call to tarball_cache() was made after the last call to write_cache();
-    if so, the last created tarball presumably still reflects the current state of
-    the cache, and no new tarball is created. This will only work within the same python
-    session (timestamps are not saved to files).
-    """
-    global _LAST_TARBALL_CACHE, _LAST_TARBALL_PATH
-    if not USE_CACHE: raise Exception('No active cache to save to a file')
-    if not dst.endswith('.tar.gz'): dst += '.tar.gz'
-    dst = osp.abspath(dst)
-    if only_if_updated:
-        if _LAST_TARBALL_CACHE:
-            if _LAST_CACHE_WRITE is None or _LAST_CACHE_WRITE < _LAST_TARBALL_CACHE:
-                # Either no write has taken place or it was before the last tarball creation;
-                # use the last created tarball and don't run again
-                logger.info('Detected no change w.r.t. last tarball %s; using it instead', _LAST_TARBALL_PATH)
-                return _LAST_TARBALL_PATH
-    try:
-        _return_dir = os.getcwd()
-        if not osp.isdir(CACHEDIR): os.makedirs(CACHEDIR) # Empty dir can be tarballed too for consistency
-        os.chdir(CACHEDIR)
-        cmd = ['tar', '-zcvf', dst, '.']
-        logger.info('Dumping %s --> %s', CACHEDIR, dst)
-        run_command(cmd)
-        _LAST_TARBALL_CACHE = datetime.datetime.now()
-        _LAST_TARBALL_PATH = dst
-        return dst
-    finally:
-        os.chdir(_return_dir)
-    return dst
-
-def load_tarball_cache(tarball, dst=None):
-    """
-    Extracts a cache tarball to cachedir and activates that cache
-    """
-    global USE_CACHE, CACHEDIR
-    if dst is None: dst = CACHEDIR
-    dst = osp.abspath(dst)
-    logger.info('Extracting %s --> %s', tarball, dst)
-    if not osp.isdir(dst): os.makedirs(dst)
-    cmd = [
-        'tar', '-xvf', tarball,
-        '-C', dst
-        ]
-    run_command(cmd)
-    # Activate it
-    USE_CACHE = True
-    CACHEDIR = dst
-    logger.info('Activated cache for path %s', CACHEDIR)
-
-# _______________________________________________________
 # Helpers for interactions with SE
-
 
 _valid_commands = [
     'mkdir', 'rm', 'stat', 'exists', 'isdir',
@@ -791,7 +458,7 @@ def best_implementation(cmd_name, path=None):
     """
     Given a command name, returns an installed implementation that has this command
     """
-    if path and is_ssh(path):
+    if path and seup.is_ssh(path):
         logger.debug('Path is ssh-like')
         preferred_order = [ssh]
     elif cmd_name == 'rm':
@@ -848,9 +515,9 @@ def put(path, contents='', make_parent_dirs=True, tmpfile_path='seutils_tmpfile'
     Creates a file on a storage element.
     `path` should contain an mgm
     """
-    path = normpath(path)
+    path = seup.normpath(path)
     tmpfile_path = osp.abspath(tmpfile_path)
-    if not has_protocol(path):
+    if not seup.has_protocol(path):
         raise TypeError('Path {0} does not contain an mgm'.format(path))
     # Open a local file
     with open(tmpfile_path, 'w') as f:
@@ -1056,7 +723,7 @@ def diff(left, right, stat=False, implementation=None):
     TODO: Currently only implemented if both left and right are remote!
     """
     for path in [left, right]:
-        if not has_protocol(path):
+        if not seup.has_protocol(path):
             raise NotImplementedError('diff does not support local paths yet: {0}'.format(path))
 
     contents_left = listdir_recursive(left, implementation=implementation, stat=stat)
@@ -1069,8 +736,8 @@ def diff(left, right, stat=False, implementation=None):
         paths_left = contents_left
         paths_right = contents_right
         
-    relpaths_left = [ relpath(p, left) for p in paths_left ]
-    relpaths_right = [ relpath(p, right) for p in paths_right ]
+    relpaths_left = [ seup.relpath(p, left) for p in paths_left ]
+    relpaths_right = [ seup.relpath(p, right) for p in paths_right ]
     set_relpaths_left = set(relpaths_left)
     set_relpaths_right = set(relpaths_right)
 
@@ -1088,6 +755,7 @@ def diff(left, right, stat=False, implementation=None):
 # _______________________________________________________
 # CLI
 
+from . import path
 from . import cli
 
 # _______________________________________________________

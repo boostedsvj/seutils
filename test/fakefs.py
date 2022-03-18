@@ -83,9 +83,9 @@ class FakeFS(object):
         return False
 
     def get_node(self, path):
-        path = self.normalize_path(path)
+        path = seutils.path.normpath(path)
         for node in self.nodes:
-            if path == node.path:
+            if path.rstrip('/') == node.path.rstrip('/'):
                 return node
         raise seutils.NoSuchPath(path)
 
@@ -127,13 +127,13 @@ class FakeFS(object):
             return False
 
     def listdir(self, path, stat=False):
-        path = seutils.normpath(path)
+        path = seutils.path.normpath(path)
         node = self.stat(path)
         if not node.isdir:
             raise TypeError('{} is not a directory'.format(path))
         contents = []
         for node in self.nodes:
-            if path == node.dirname:
+            if path.rstrip('/') == node.dirname.rstrip('/'):
                 contents.append(node if stat else node.path)
         return contents
 
@@ -169,7 +169,7 @@ class FakeFS(object):
         node = generate_fake_node(path, *args, **kwargs)
         self.nodes.append(node)
         # Also make sure any directories leading up to this node are created
-        for parent_dir in seutils.iter_parent_dirs(path):
+        for parent_dir in seutils.path.iter_parent_dirs(path):
             if self.isfile(parent_dir):
                 raise ValueError('Parent path {0} is also a file'.format(parent_dir))
             elif not self.isdir(parent_dir):
@@ -183,23 +183,24 @@ class FakeRemoteFS(FakeFS):
         super(FakeRemoteFS, self).__init__()
 
     def stat(self, path):
-        return self.get_node(seutils.format(path, self.mgm))
-
-    def normalize_path(self, path):
-        return path
+        path = seutils.path.normpath(path)
+        for node in self.nodes:
+            if path.rstrip('/') == node.path.rstrip('/'):
+                return node
+        raise seutils.NoSuchPath(path)
 
     def put(self, path, *args, **kwargs):
         """Puts a node in this fake file system.
         Will also create all directories leading up to the file, if they don't exist yet.
         Not strictly a valid interaction with a storage element, but convenient to have."""
-        path = seutils.format(path, self.mgm)
+        path = seutils.path.format_mgm(self.mgm, path)
         if self.exists(path):
             raise ValueError('Path {0} already exists'.format(path))
         seutils.logger.debug('Put: %s', path)
         node = generate_fake_node(path, *args, **kwargs)
         self.nodes.append(node)
         # Also make sure any directories leading up to this node are created
-        for parent_dir in seutils.iter_parent_dirs(path):
+        for parent_dir in seutils.path.iter_parent_dirs(path):
             if self.isfile(parent_dir):
                 raise ValueError('Parent path {0} is also a file'.format(parent_dir))
             elif not self.isdir(parent_dir):
@@ -270,9 +271,9 @@ class FakeGfalInterceptor(FakeCommandInterceptor):
             return FakeFSTransaction('cp', cmd[-2], cmd[-1])
         if not gfal_cmd.startswith('gfal-'):
             raise NotIntercepted(cmd + flags)
-        # mgm, path = seutils.split_mgm(cmd[1])
+        # mgm, path = seutils.path.split_mgm(cmd[1])
         path = cmd[1]
-        mgm, _ = seutils.split_mgm(path)
+        mgm, _ = seutils.path.split_mgm(path)
         try:
             transaction = getattr(self, gfal_cmd.replace('gfal-',''))(path, flags)
             transaction.mgm = mgm
@@ -333,7 +334,7 @@ class FakeXrdInterceptor(FakeCommandInterceptor):
             raise NotIntercepted(cmd + flags)
         try:
             xrd_cmd = cmd[2]
-            path = seutils._join_mgm_lfn(cmd[1], cmd[3])
+            path = seutils.path.join_mgm(cmd[1], cmd[3])
             transaction = getattr(self, xrd_cmd)(path, flags)
             transaction.mgm = cmd[1]
             return transaction
@@ -411,13 +412,13 @@ class FakeInternet:
     def cp(self, transaction, interceptor):
         src = transaction.args[0]
         dst = transaction.args[1]
-        src_mgm, src_path = seutils.split_mgm(src) if seutils.has_protocol(src) else ('<local>', src)
-        dst_mgm, dst_path = seutils.split_mgm(dst) if seutils.has_protocol(dst) else ('<local>', dst)
+        src_mgm, src_path = seutils.path.split_mgm(src) if seutils.path.has_protocol(src) else ('<local>', src)
+        dst_mgm, dst_path = seutils.path.split_mgm(dst) if seutils.path.has_protocol(dst) else ('<local>', dst)
         for mgm in [src_mgm, dst_mgm]:
             if not self.check_mgm_exists(mgm):
                 return interceptor.RCODE_UNREACHABLE, ''
         try:
-            src_node = self.fs[src_mgm].stat(src_path)
+            src_node = self.fs[src_mgm].stat(src)
         except seutils.NoSuchPath:
             return interceptor.RCODE_NOSUCHPATH, ''
         dst_node = copy.deepcopy(src_node)
@@ -455,7 +456,10 @@ class FakeInternet:
             if output is None: output = ''
             return 0, output
         except seutils.NoSuchPath:
-            seutils.logger.error('FakeInternet: Path does not exist')
+            seutils.logger.error(
+                'FakeInternet: Path does not exist; available:\n%s',
+                '\n'.join([node.path for fs in self.fs.values() for node in fs.nodes])
+                )
             return interceptor.RCODE_NOSUCHPATH, ''
 
 

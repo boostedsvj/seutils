@@ -1,8 +1,6 @@
 import seutils
-import os.path as osp, sys
+import sys
 from contextlib import contextmanager
-from seutils import run_command, get_exitcode, Inode, split_mgm
-logger = seutils.logger
 
 IS_INSTALLED = None
 def is_installed():
@@ -28,7 +26,7 @@ def open_root(path, mode='READ'):
         yieldable = path
         if do_open:
             import uproot
-            logger.debug('Opening %s with uproot', path)
+            seutils.logger.debug('Opening %s with uproot', path)
             yieldable = uproot.open(path)
         yield yieldable
     finally:

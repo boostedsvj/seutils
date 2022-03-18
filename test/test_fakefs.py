@@ -52,22 +52,6 @@ def test_fakefs_put(fs):
     assert fs.isfile('/test/path/file.file')
 
 
-
-def test_iter_parent_dirs():
-    path = 'root://foo.bar.gov//foo/bar/test.file'
-    parent_dirs = list(seutils.iter_parent_dirs(path))
-    assert parent_dirs[0] == 'root://foo.bar.gov//foo/bar'
-    assert parent_dirs[1] == 'root://foo.bar.gov//foo'
-    assert parent_dirs[2] == 'root://foo.bar.gov//'
-    assert len(parent_dirs) == 3
-    path = '/foo/bar/test.file'
-    parent_dirs = list(seutils.iter_parent_dirs(path))
-    assert parent_dirs[0] == '/foo/bar'
-    assert parent_dirs[1] == '/foo'
-    assert parent_dirs[2] == '/'
-    assert len(parent_dirs) == 3
-
-
 @pytest.fixture
 def remotefs():
     seutils.debug()

@@ -16,7 +16,7 @@ class XrdImplementation(seutils.Implementation):
     def stat(self, path):
         import datetime
         fullpath = path
-        mgm, path = seutils.split_mgm(path)
+        mgm, path = seutils.path.split_mgm(path)
         cmd = [ 'xrdfs', mgm, 'stat', path ]
         output = self.run_command(cmd, path=path)
         # Parse output to an Inode instance
@@ -39,14 +39,14 @@ class XrdImplementation(seutils.Implementation):
 
     @seutils.add_env_kwarg
     def mkdir(self, directory):
-        mgm, directory = seutils.split_mgm(directory)
+        mgm, directory = seutils.path.split_mgm(directory)
         self.run_command([ 'xrdfs', mgm, 'mkdir', '-p', directory ], path=directory)
 
     @seutils.rm_safety
     @seutils.add_env_kwarg
     def rm(self, path, recursive=False):
         # NB: xrdfs cannot recursively delete contents of directories, so this is not the preferred tool
-        mgm, lfn = seutils.split_mgm(path)
+        mgm, lfn = seutils.path.split_mgm(path)
         if self.isdir(path):
             if not recursive:
                 raise RuntimeError('{} is a directory but rm instruction is not recursive'.format(path))
@@ -57,13 +57,13 @@ class XrdImplementation(seutils.Implementation):
 
     @seutils.add_env_kwarg
     def cat(self, path):
-        mgm, path = seutils.split_mgm(path)
+        mgm, path = seutils.path.split_mgm(path)
         return ''.join(self.run_command([ 'xrdfs', mgm, 'cat', path ], path=path))
 
     @seutils.listdir_check_isdir
     @seutils.add_env_kwarg
     def listdir(self, directory, stat=False):
-        mgm, path = seutils.split_mgm(directory)
+        mgm, path = seutils.path.split_mgm(directory)
         cmd = [ 'xrdfs', mgm, 'ls', path ]
         if stat: cmd.append('-l')
         output = self.run_command(cmd, path=directory)
@@ -74,7 +74,7 @@ class XrdImplementation(seutils.Implementation):
             if stat:
                 contents.append(xrdstatline_to_inode(l, mgm))
             else:
-                contents.append(seutils.format(l, mgm))
+                contents.append(seutils.path.format_mgm(mgm, l))
         return contents
 
     @seutils.add_env_kwarg
@@ -101,5 +101,5 @@ def xrdstatline_to_inode(statline, mgm):
     isdir = components[0].startswith('d')
     modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
     size = int(components[3])
-    path = seutils.format(components[4], mgm)
+    path = seutils.path.format_mgm(mgm, components[4])
     return seutils.Inode(path, modtime, isdir, size)

@@ -239,7 +239,7 @@ def count_dataset(directory, read_cache=True, write_cache=True, rootfiles=None):
         raise Exception('{} is a file, not a directory'.format(directory))
     
     # If rootfiles are passed, make sure they have a proper mgm
-    if rootfiles: rootfiles = [seutils.format(r) for r in rootfiles]
+    if rootfiles: rootfiles = [seutils.path.assert_valid_path(r) for r in rootfiles]
 
     cache = Cache(osp.join(directory, '.seucounts.json'), noload=not(read_cache))
 

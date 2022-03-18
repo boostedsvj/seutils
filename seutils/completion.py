@@ -58,28 +58,32 @@ def seu_ls(cmd, curr_word, prev_word, line, log=log):
         return
     # Get the thing to expand
     path = line.strip().split()[-1]
-    return expand_path(path)
+    return expand_path(path, log=log)
 
 
-def expand_path(path):
+def expand_path(path, log=log):
     log('Path to expand: %s' % path)
 
     # For debugging only:
     if COMPLETION_TEST_MODE:
         try:
-            log(f'dirname={seutils.dirname(path)}')
-            log(f'lfn={seutils.get_lfn(path)}')
+            log(f'dirname={seutils.path.dirname(path)}')
+            log(f'lfn={seutils.path.get_lfn(path)}')
         except Exception:
             pass
 
     # Do expansion to the registerd default mgms
-    if not(seutils.is_valid_path(path)):
+    if not(seutils.path.is_valid_path(path)):
         log(f'{path=} is not valid')
         matching_mgms = [ mgm for mgm in DEFAULT_MGMS if fnmatch.fnmatch(mgm, path+'*') ]
         return format_matches(path, matching_mgms, log=log)
-    elif seutils.get_depth(path) <= 1:
+
+    log('Applying normpath')
+    path = seutils.path.normpath(path) #+ ('' if path.endswith('/') else '/')
+    log('path=%s' % path)
+
+    if seutils.path.get_depth(path) <= 1:
         log('path=%s has depth <= 1' % path)
-        path = seutils.normpath(path)
         matching_mgms = [ mgm for mgm in DEFAULT_MGMS if fnmatch.fnmatch(mgm, path+'*') ]
         return format_matches(path, matching_mgms, log=log)
 
@@ -134,10 +138,12 @@ def completion_hook(cmd, curr_word, prev_word, line, log=log):
         log(f'{cmd=}, {curr_word=}, {prev_word=}, {line=}')
         if cmd == 'seu-ls':
             result = seu_ls(cmd, curr_word, prev_word, line, log=log)
-    except Exception as e:
+    except Exception:
         log('Exception occured: ')
-        log(e)
+        import traceback
+        log(traceback.format_exc())
         raise 
+    log('Result: %s' % result)
     if result is not None: print(result)
             
 
@@ -148,7 +154,7 @@ def activate_fake_internet():
     fs = fakefs.FakeRemoteFS('root://foo.bar.gov')
     fs.put('/store/user/test.file', isdir=False, content='testcontent')
     fs.put('/store/user/other.file', isdir=False, content='testcontent')
-    fs.put('/store/user/testdir', isdir=True, content='testcontent')
+    fs.put('/store/user/testdir', isdir=True)
     fs.put('/store/user/testdir/file.file', isdir=False, content='testcontent')
     fi.fs = {fs.mgm : fs}
     fakefs.activate_command_interception(fi)
