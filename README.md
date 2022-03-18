@@ -1,4 +1,4 @@
-# seutis - Storage element utilities
+# seutils - Storage element utilities
 
 `seutils` is a package that aims to make HEP storage element operations via Python easier. It relies on the availability of storage element command line tools such as [XRootD](https://xrootd.slac.stanford.edu/), [gfal2-util](https://github.com/cern-fts/gfal2-util), or [eos](https://github.com/cern-eos/eos). `seutils` has no python dependencies other than the standard library, and is compatible from Python 3.10 down to Python 2.7.5.
 
@@ -88,6 +88,7 @@ And some other utilities:
 >>>
 >>> list(seutils.path.iter_parent_dirs('root://foo.bar.gov//foo/bar/test.file'))
 ['root://foo.bar.gov//foo/bar', 'root://foo.bar.gov//foo', 'root://foo.bar.gov//']
+>>>
 >>> seutils.path.get_protocol('root://foo.bar.gov//foo/bar/test.file')
 'root'
 ```
@@ -184,4 +185,8 @@ Some commands also accept wildcards:
 $ seu-ls root://foo.bar.gov//store/user/test*
 root://foo.bar.gov//store/user/test.file
 root://foo.bar.gov//store/user/testdir
+
+$ seu-ls -l root://foo.bar.gov//store/user/test*
+2020-12-08 03:23  1.6 Gb    root://foo.bar.gov//store/user/test.file
+2020-08-17 15:38  305.0 b   root://foo.bar.gov//store/user/testdir
 ```
