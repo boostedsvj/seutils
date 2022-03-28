@@ -15,6 +15,7 @@ setup(
     author        = 'Thomas Klijnsma',
     author_email  = 'tklijnsm@gmail.com',
     packages      = ['seutils'],
+    package_data  = {'mypkg': ['seutils/include/*']},
     zip_safe      = False,
     scripts       = [
         'bin/seu-install-completion',
