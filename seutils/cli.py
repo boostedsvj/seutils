@@ -166,17 +166,17 @@ def du():
         for inode in inodes:
             print('{0:<8} {1}'.format(inode.size_human, inode.path))
 
+# Bind python3 "raw_input" to input, for python 2/3 compatibility
+try:
+    input = raw_input
+except NameError:
+    pass
 
 def rm():
     parser = ParserMultipleRemotePaths()
     parser.add_argument('-y', action='store_true', help='Skip user verification')
     parser.add_argument('-r', action='store_true', help='Recursive remove (required for directories)')
     args = parser.parse_args()
-
-    try:
-        input = raw_input
-    except NameError:
-        pass
 
     for path in args.paths:
         if not args.y:
