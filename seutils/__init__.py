@@ -761,3 +761,4 @@ from . import cli
 # root utils extension
 
 from . import root
+from . import root_cli

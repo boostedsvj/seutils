@@ -190,3 +190,21 @@ $ seu-ls -l root://foo.bar.gov//store/user/test*
 2020-12-08 03:23  1.6 Gb    root://foo.bar.gov//store/user/test.file
 2020-08-17 15:38  305.0 b   root://foo.bar.gov//store/user/testdir
 ```
+
+
+### ROOT file utilities
+
+As high energy physicists frequently have to work with ROOT files, `seutils` includes some basic utilities to quickly get information about ROOT files. The following command lines tools require that `uproot` (version 3 or 4) is installed.
+
+```
+$ seu-root-ls -b root://foo.bar.gov//store/user/my/file/rootfile.root
+/
+  TreeMaker2
+    PreSelection (tree, 2 entries)
+      RunNum
+      LumiBlockNum
+      EvtNum
+      BadChargedCandidateFilter
+```
+
+`seu-root-ls` works on both remote and local files.

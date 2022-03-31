@@ -25,7 +25,8 @@ setup(
         'bin/seu-ls', 'bin/seu-du',
         'bin/seu-rm', 'bin/seu-mkdir', 'bin/seu-cat',
         # ROOT-file interactions
-        'bin/seu-nentries', 'bin/seu-printbranches',
-        'bin/seu-countdataset'
-        ],
+        'bin/seu-root-ls',
+        # 'bin/seu-nentries', 'bin/seu-printbranches',
+        # 'bin/seu-countdataset'
+        ]
     )

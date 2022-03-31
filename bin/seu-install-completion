@@ -1,8 +1,10 @@
 COMPLETION_FILE=$(python -c "from __future__ import print_function; import os; import seutils; print(os.path.abspath(seutils.__file__).replace('__init__', 'completion').replace('.pyc', '.py'))")
 if [ -t 1 ] ; then
     echo "Run the following (or copy the following into your .bashrc):"
+    echo ""
     echo "chmod +x $COMPLETION_FILE"
     echo "complete -o nospace -C $COMPLETION_FILE seu-ls"
+    echo ""
     echo "Or run this script redirected to source to activate completion for this shell only (bash only):"
     echo "source /dev/stdin <<< \"\$(seu-install-completion)\""
 else

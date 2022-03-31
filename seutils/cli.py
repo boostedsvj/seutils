@@ -76,40 +76,6 @@ class ParserMultipleRemotePaths(Parser):
         return parsed_args
 
 
-def cli_detect_fnal():
-    if seutils.DEFAULT_MGM is None and os.uname()[1].endswith('.fnal.gov'):
-        mgm = 'root://cmseos.fnal.gov'
-        seutils.logger.warning('Detected fnal.gov host; using mgm %s as default if necessary', mgm)
-        seutils.set_default_mgm(mgm)
-
-def cli_flexible_format(lfn, mgm=None):
-    if seutils.path.is_ssh(lfn): return lfn
-    cli_detect_fnal()
-    if not seutils.path.has_protocol(lfn) and not lfn.startswith('/'):
-        try:
-            prefix = '/store/user/' + os.environ['USER']
-            seutils.logger.warning('Pre-fixing %s', prefix)
-            lfn = os.path.join(prefix, lfn)
-        except KeyError:
-            pass
-    if seutils.path.has_protocol(lfn):
-        return format(lfn)
-    else:
-        return format(lfn, mgm)
-
-def cli_expand_lfns(raw_lfns):
-    # First preprocess any wildcards
-    lfns = []
-    for lfn in raw_lfns:
-        if '*' in lfn:
-            lfns.extend(seutils.ls_wildcard(lfn))
-        else:
-            lfns.append(lfn)
-    # Format once more to be sure everything is a proper lfn
-    lfns = [cli_flexible_format(lfn, cli_detect_fnal()) for lfn in lfns]
-    return lfns
-
-
 # ________________________________________________________
 # Command line tool implementations
 
