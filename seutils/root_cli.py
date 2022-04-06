@@ -1,4 +1,3 @@
-from sys import implementation
 import seutils
 from . import root
 import argparse, os.path as osp
