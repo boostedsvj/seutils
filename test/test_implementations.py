@@ -23,18 +23,24 @@ def impl(request):
 
 @pytest.fixture
 def gfal_impl():
-    return seutils.GfalImplementation()
+    impl = seutils.GfalImplementation()
+    impl._is_installed = True
+    return impl
 
 @pytest.fixture
 def xrd_impl():
-    return seutils.XrdImplementation()
+    impl = seutils.XrdImplementation()
+    impl._is_installed = True
+    return impl
 
 @pytest.fixture
 def globalscope_impl():
     # Disable all implementations except xrd, ensuring that the heuristic
     # to determine the implementation always returns xrd
     for name, impl in seutils.implementations.items():
-        if name == 'xrd': continue
+        if name == 'xrd':
+            impl._is_installed = True
+            continue
         impl._is_installed_BACKUP = impl._is_installed
         impl._is_installed = False
     yield seutils

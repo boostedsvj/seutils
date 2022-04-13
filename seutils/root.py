@@ -36,10 +36,11 @@ class Implementation:
         raise NotImplementedError
 
 
-from .uproot_implementation import UprootImplementation
+from .uproot_implementation import UprootImplementation, Uproot3Implementation
 
 uproot = UprootImplementation()
-implementations = dict(uproot=uproot)
+uproot3 = Uproot3Implementation()
+implementations = dict(uproot=uproot, uproot3=uproot3)
 
 
 def get_implementation(implementation_name):

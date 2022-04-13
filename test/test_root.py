@@ -1,6 +1,6 @@
 import seutils, pytest, os.path as osp
 from pprint import pprint
-from seutils.uproot_implementation import UprootImplementation
+from seutils.uproot_implementation import UprootImplementation, Uproot3Implementation
 
 test_mz250 = osp.join(osp.dirname(__file__), 'test_mz250.root')
 test_cmssw_sim = osp.join(osp.dirname(__file__), 'test_cmssw_sim.root')
@@ -14,12 +14,16 @@ def uproot_impl():
     return UprootImplementation()
 
 @pytest.fixture
+def uproot3_impl():
+    return Uproot3Implementation()
+
+@pytest.fixture
 def globalscope_impl():
     return seutils.root
 
 
 implementations = ['uproot_impl', 'globalscope_impl']
-# implementations = ['uproot_impl']
+# implementations = ['uproot3_impl']
 
 
 @pytest.mark.parametrize('impl', implementations, indirect=True)

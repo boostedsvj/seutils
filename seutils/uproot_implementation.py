@@ -13,7 +13,10 @@ def open_uproot(path, mode='READ'):
     try:
         yieldable = path
         if do_open:
-            import uproot
+            try:
+                import uproot
+            except ImportError:
+                import uproot3 as uproot
             seutils.logger.debug('Opening %s with uproot', path)
             yieldable = uproot.open(path)
         yield yieldable
@@ -60,7 +63,13 @@ def iter_contents(f, prefix='', seen=None, depth=0):
     is_nodelike = is_node(f)
 
     # Get a name for this node; Can be either the path (if nodelike) or the treename
-    name = (decode(f.path[-1]) if len(f.path) else '') if is_nodelike else decode(f.name)
+    try:
+        name = (decode(f.path[-1]) if len(f.path) else '') if is_nodelike else decode(f.name)
+    except AttributeError:
+        # uproot3 compatibility 
+        name = decode(f.name)
+        name = name.split('.root')[-1]
+
     name = os.path.join(prefix, name)
     if name == '': name = '/'
 
@@ -111,3 +120,17 @@ class UprootImplementation(Implementation):
 
     def is_ttree(self, f):
         return is_ttree(f)
+
+
+class Uproot3Implementation(UprootImplementation):
+
+    def check_is_installed(self):
+        try:
+            import uproot3
+            return True
+        except ImportError:
+            return False
+
+    def branches(self, tree):
+        items = tree.items(recursive=True)
+        return [ (decode(k), b) for k, b in items ]

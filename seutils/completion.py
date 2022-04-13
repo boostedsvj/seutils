@@ -156,6 +156,7 @@ def activate_fake_internet():
     fs.put('/store/user/testdir/file.file', isdir=False, content='testcontent')
     fi.fs = {fs.mgm : fs}
     fakefs.activate_command_interception(fi)
+    seutils.gfal._is_installed = True
 
 
 def main():
