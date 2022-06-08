@@ -48,6 +48,32 @@ class ParserSinglePath(Parser):
         return parsed_args
 
 
+class ParserMultipleRemotePaths(Parser):
+    def __init__(self, *args, **kwargs):
+        super(ParserMultipleRemotePaths, self).__init__(*args, **kwargs)
+        self.add_argument('paths', type=str, nargs='*', help='Paths (must be remote)')
+
+    def parse_args(self, *args, **kwargs):
+        expand_wildcards = kwargs.pop('expand_wildcards', True)
+        allow_zero_paths = kwargs.pop('allow_zero_paths', False)
+        disallow_wildcards = kwargs.pop('disallow_wildcards', False)
+        parsed_args = super(ParserMultipleRemotePaths, self).parse_args(*args, **kwargs)
+        paths = []
+        for path in parsed_args.paths:
+            if not seutils.path.has_protocol(path):
+                raise TypeError('Path {0} is not remote'.format(path))
+            if disallow_wildcards and '*' in path:
+                raise TypeError('Wildcards not allowed')
+            if expand_wildcards:
+                paths.extend(seutils.ls_wildcard(path, implementation=parsed_args.implementation))
+            else:
+                paths.append(path)
+        parsed_args.paths = paths
+        if not allow_zero_paths and len(paths) == 0:
+            raise TypeError('Pass at least one path')
+        return parsed_args
+
+
 def root_ls():
     parser = ParserSinglePath()
     parser.add_argument('-b', '--branches', action='store_true', help='Also print branches for TTree\'s')
@@ -61,3 +87,33 @@ def root_ls():
         if is_tree and args.branches:
             for branch_name, _ in root.branches(node, implementation=args.implementation):
                 print('  '*(node.____depth+1) + branch_name)
+
+
+def root_count():
+    parser = ParserMultipleRemotePaths()
+    parser.add_argument('-l', '--detailed', action='store_true', help='Print also counts per file')
+    args = parser.parse_args()
+
+    from collections import OrderedDict
+    tree_counts = OrderedDict()
+    tree_files = OrderedDict()
+
+    # Collect the counts per tree
+    for path in args.paths:
+        for name, node in root.ls(path, implementation=args.implementation):
+            if not root.is_ttree(node, implementation=args.implementation): continue
+            tree_counts.setdefault(name, [])
+            tree_counts[name].append(root.nentries(node, implementation=args.implementation))
+            tree_files.setdefault(name, [])
+            tree_files[name].append(path)
+
+    # Print
+    for name, counts in tree_counts.items():
+        n_files = len(counts)
+        total = sum(counts)
+        mean = float(total) / n_files
+        print('{3}: {0:.0f} ({1:.2f} per file, {2} files)'.format(total, mean, n_files, name))
+
+        if args.detailed:
+            for path, count in zip(tree_files[name], counts):
+                print('{0:7.0f} {1}'.format(count, path))
