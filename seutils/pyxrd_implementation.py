@@ -10,7 +10,7 @@ class PyxrdImplementation(seutils.Implementation):
 
     def check_is_installed(self):
         try:
-            import XRootD
+            import XRootD # type: ignore
             return True
         except ImportError:
             return False
@@ -19,7 +19,7 @@ class PyxrdImplementation(seutils.Implementation):
         mgm = mgm.strip('/')
         if mgm not in self.clients:
             seutils.logger.info('Starting new client for %s', mgm)
-            from XRootD import client
+            from XRootD import client # type: ignore
             filesystem = client.FileSystem(mgm)
             status, _ = filesystem.ping()
             seutils.logger.info('Filesystem %s status: %s', mgm, status)
@@ -32,7 +32,7 @@ class PyxrdImplementation(seutils.Implementation):
         return self.clients[mgm]
 
     def mkdir(self, path):
-        from XRootD.client import flags
+        from XRootD.client import flags # type: ignore
         mgm, directory = seutils.path.split_mgm(path)
         client = self.get_client(mgm)
         seutils.logger.warning('Creating directory on SE: {0}'.format(path))
@@ -53,7 +53,7 @@ class PyxrdImplementation(seutils.Implementation):
         return statinfo_to_inode(path, statinfo)
 
     def listdir(self, path, stat=False, assume_directory=False):
-        from XRootD.client import flags
+        from XRootD.client import flags # type: ignore
         # Check whether path is actually a directory
         if not assume_directory and not self.isdir(path):
             raise Exception('Path {0} is not a directory'.format(path))
@@ -76,7 +76,7 @@ class PyxrdImplementation(seutils.Implementation):
         return contents
 
     def cat(self, path):
-        from XRootD import client
+        from XRootD import client # type: ignore
         with client.File() as f:
             f.open(path)
             output = b''.join(f.readlines())
@@ -96,7 +96,7 @@ def read_statinfoflagenum():
     global FLAGVALS, _FLAGVALS_PREPARED
     if not _FLAGVALS_PREPARED:
         _FLAGVALS_PREPARED = True
-        from XRootD import client
+        from XRootD import client # type: ignore
         log = lambda val: int(math.log(val, 2.0))
         FLAGVALS[log(client.flags.StatInfoFlags.X_BIT_SET)] = 'X_BIT_SET'
         FLAGVALS[log(client.flags.StatInfoFlags.IS_DIR)] = 'IS_DIR'

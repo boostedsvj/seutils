@@ -24,7 +24,7 @@ def setup_logger(name='seutils'):
     else:
         fmt = logging.Formatter(
             fmt = (
-                '\033[33m%(levelname)7s:%(asctime)s:%(module)s:%(lineno)s\033[0m'
+                '\033[32m[%(name)s:%(levelname)s:%(asctime)s:%(module)s:%(lineno)s]\033[0m'
                 + ' %(message)s'
                 ),
             datefmt='%Y-%m-%d %H:%M:%S'
@@ -46,6 +46,18 @@ def debug(flag=True):
 def silent(flag=True):
     """Disables the logger (for True) or sets it back to default (for False)"""
     logger.setLevel(logging.CRITICAL+1 if flag else DEFAULT_LOGGING_LEVEL)
+
+@contextmanager
+def temp_log_level(level):
+    """
+    Context manager to temporarily set a different logging level
+    """
+    old_level = logger.level
+    logger.setLevel(level)
+    try:
+        yield level
+    finally:
+        logger.setLevel(old_level)
 
 
 DRYMODE = False
@@ -391,37 +403,33 @@ class Implementation:
     def check_is_installed(self):
         raise NotImplementedError
 
-    @add_env_kwarg
-    def exists(self, path):
-        try:
-            self.stat(path)
-            return True
-        except NoSuchPath:
-            return False
-
-    @add_env_kwarg
-    def isfile(self, path):
-        try:
-            inode = self.stat(path)
-            return inode.isfile
-        except NoSuchPath:
-            return False
 
     @add_env_kwarg
     def is_file_or_dir(self, path):
+        """
+        Returns an integer depending on what the path is:
+        - 2 if it's a file
+        - 1 if it's a directory
+        - 0 if it doesn't exist
+        """
         try:
-            inode = self.stat(path)
+            with temp_log_level(logging.CRITICAL):
+                inode = self.stat(path)
             return 2 if inode.isfile else 1
         except NoSuchPath:
             return 0
 
     @add_env_kwarg
+    def exists(self, path):
+        return self.is_file_or_dir(path) != 0
+
+    @add_env_kwarg
+    def isfile(self, path):
+        return self.is_file_or_dir(path) == 2
+
+    @add_env_kwarg
     def isdir(self, directory):
-        try:
-            inode = self.stat(directory)
-            return inode.isdir
-        except NoSuchPath:
-            return False
+        return self.is_file_or_dir(directory) == 1
 
 
 from .gfal_implementation import GfalImplementation

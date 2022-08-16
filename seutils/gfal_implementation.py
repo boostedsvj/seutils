@@ -44,10 +44,6 @@ class GfalImplementation(seutils.Implementation):
     def mkdir(self, path):
         self.run_command(['gfal-mkdir', '-p', path], path=path)
 
-    @seutils.add_env_kwarg
-    def exists(self, path):
-        return seutils.get_exitcode(['gfal-stat', path]) == 0
-
     @seutils.listdir_check_isdir
     @seutils.add_env_kwarg
     def listdir(self, directory, stat=False):
