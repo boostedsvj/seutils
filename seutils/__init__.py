@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, time
+import logging, subprocess, os, time, sys
 from contextlib import contextmanager
 
 from . import path as seup
@@ -10,6 +10,9 @@ N_COPY_ATTEMPTS = 1
 DEFAULT_LOGGING_LEVEL = logging.WARNING
 N_SECONDS_SLEEP = 10
 INCLUDE_DIR = osp.join(osp.abspath(osp.dirname(__file__)), "include")
+
+PY3 = sys.version_info.major == 3
+PY2 = sys.version_info.major == 2
 
 
 def version():
@@ -759,6 +762,28 @@ def diff(left, right, stat=False, implementation=None):
         _sorted_paths_from_set(only_in_left, relpaths_left, contents_left),
         _sorted_paths_from_set(only_in_right, relpaths_right, contents_right),
         )
+
+
+def bytesio(path, implementation=None):
+    """
+    Simply calls cat_bytes, and returns that output in a BytesIO object.
+    Useful for loading npz or json from a filelike object.
+    """
+    from io import BytesIO
+    return BytesIO(cat_bytes(path, implementation=implementation))
+
+
+def load_npz(npz_file, *args, **kwargs):
+    """
+    Load an npz from a remote location.
+    """
+    implementation = kwargs.pop('implementation', None)
+    import numpy as np
+    if not seup.has_protocol(npz_file):
+        return np.load(npz_file, *args, **kwargs)
+    else:
+        return np.load(bytesio(npz_file, implementation=implementation), *args, **kwargs)
+
 
 # _______________________________________________________
 # CLI

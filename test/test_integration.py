@@ -122,3 +122,28 @@ def test_diff_gfal():
         ['gsiftp://hepcms-gridftp.umd.edu//mnt/hadoop/cms/store/user/thomas.klijnsma/difftest/file2.txt'],
         []
         )
+
+
+@pytest.mark.real_integration
+def test_load_npz_xrd():
+    run_load_npz_test(seutils.XrdImplementation())
+
+@pytest.mark.real_integration
+def test_load_npz_gfal():
+    run_load_npz_test(seutils.GfalImplementation())
+
+def run_load_npz_test(impl):
+    import numpy as np
+    from io import BytesIO
+    try:
+        # First get the bytes that would be written to a file
+        f = BytesIO()
+        np.savez(f, a=np.ones((2,2)), b=np.zeros(1))
+        content = f.getvalue()
+        seutils.put('root://cmseos.fnal.gov//store/user/klijnsma/seutest.npz', content, implementation=impl)
+        # Now load and assert
+        d = seutils.load_npz('root://cmseos.fnal.gov//store/user/klijnsma/seutest.npz', implementation=impl)
+        np.testing.assert_array_equal(d['a'], np.ones((2,2)))
+        np.testing.assert_array_equal(d['b'], np.zeros(1))
+    finally:
+        impl.rm('root://cmseos.fnal.gov//store/user/klijnsma/seutest.npz')

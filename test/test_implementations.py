@@ -162,7 +162,6 @@ def test_cp(impl):
 def test_cat_bytes(impl, mocker):
     fs = seutils.active_fake_internet.fs['root://foo.bar.gov']
     fs.put('root://foo.bar.gov//foo/bar/bytes.npz', isdir=False, content=b'somebytes')
-    assert impl.isfile('root://foo.bar.gov//foo/bar/bytes.npz') is True
     mocker.patch('subprocess.check_output', return_value=b'somebytes')
     assert impl.cat_bytes('root://foo.bar.gov//foo/bar/bytes.npz') == b'somebytes'
 
@@ -231,3 +230,18 @@ def test_diff(impl):
         seutils.diff('root://foo.bar.gov//foo', '/foo')
     with pytest.raises(NotImplementedError):
         seutils.diff('/foo', 'root://foo.bar.gov//foo')
+
+
+@pytest.mark.parametrize('impl', implementations, indirect=True)
+def test_load_npz(impl, mocker):
+    import numpy as np
+    from io import BytesIO
+    # First get the bytes that would be written to a file
+    f = BytesIO()
+    np.savez(f, a=np.ones((2,2)), b=np.zeros(1))
+    content = f.getvalue()
+    mocker.patch('subprocess.check_output', return_value=content)
+    assert impl.cat_bytes('root://foo.bar.gov//foo/bar/bytes.npz') == content
+    d = seutils.load_npz('root://foo.bar.gov//foo/bar/bytes.npz')
+    np.testing.assert_array_equal(d['a'], np.ones((2,2)))
+    np.testing.assert_array_equal(d['b'], np.zeros(1))
