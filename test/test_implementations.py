@@ -158,6 +158,14 @@ def test_cp(impl):
     with pytest.raises(seutils.NoSuchPath):
         impl.cp('/no/such/local.file', 'root://foo.bar.gov//foo/bar/dst.file')
 
+@pytest.mark.parametrize('impl', implementations, indirect=True)
+def test_cat_bytes(impl, mocker):
+    fs = seutils.active_fake_internet.fs['root://foo.bar.gov']
+    fs.put('root://foo.bar.gov//foo/bar/bytes.npz', isdir=False, content=b'somebytes')
+    assert impl.isfile('root://foo.bar.gov//foo/bar/bytes.npz') is True
+    mocker.patch('subprocess.check_output', return_value=b'somebytes')
+    assert impl.cat_bytes('root://foo.bar.gov//foo/bar/bytes.npz') == b'somebytes'
+
 
 # __________________________________________________
 # Algos

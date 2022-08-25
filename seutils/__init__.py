@@ -377,7 +377,7 @@ class NonZeroExitCode(subprocess.CalledProcessError):
 
 _valid_commands = [
     'mkdir', 'rm', 'stat', 'exists', 'isdir',
-    'isfile', 'is_file_or_dir', 'listdir', 'cp', 'cat'
+    'isfile', 'is_file_or_dir', 'listdir', 'cp', 'cat', 'cat_bytes'
     ]
 
 class Implementation:
@@ -402,7 +402,6 @@ class Implementation:
 
     def check_is_installed(self):
         raise NotImplementedError
-
 
     @add_env_kwarg
     def is_file_or_dir(self, path):
@@ -507,6 +506,7 @@ isfile = make_global_scope_command('isfile')
 is_file_or_dir = make_global_scope_command('is_file_or_dir')
 listdir = make_global_scope_command('listdir')
 cat = make_global_scope_command('cat')
+cat_bytes = make_global_scope_command('cat_bytes')
 cp = make_global_scope_command('cp')
 stat_fn = stat # Alias for if stat is a keyword in a function in this module
 

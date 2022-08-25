@@ -1,4 +1,5 @@
 import seutils
+import subprocess
 
 
 class XrdImplementation(seutils.Implementation):
@@ -85,6 +86,15 @@ class XrdImplementation(seutils.Implementation):
         if create_parent_directory: cmd.insert(1, '-p')
         if force: cmd.insert(1, '-f')
         self.run_command(cmd, n_attempts=n_attempts, path=src+' -> '+dst)
+
+    @seutils.add_env_kwarg
+    def cat_bytes(self, path):
+        mgm, spath = seutils.path.split_mgm(path)
+        try:
+            return subprocess.check_output(['xrdfs', mgm, 'cat', spath])
+        except Exception as e:
+            if e.returncode in self.rcodes: raise self.rcodes[e.returncode](path)
+            raise e
 
 
 def xrdstatline_to_inode(statline, mgm):

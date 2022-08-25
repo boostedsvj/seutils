@@ -1,5 +1,6 @@
 import seutils
 import os.path as osp
+import subprocess
 logger = seutils.logger
 import datetime
 
@@ -79,6 +80,14 @@ class GfalImplementation(seutils.Implementation):
     @seutils.add_env_kwarg
     def cat(self, path):
         return ''.join(self.run_command(['gfal-cat', path], path=path))
+
+    @seutils.add_env_kwarg
+    def cat_bytes(self, path):
+        try:
+            return subprocess.check_output(['gfal-cat', path])
+        except Exception as e:
+            if e.returncode in self.rcodes: raise self.rcodes[e.returncode](path)
+            raise e
 
 
 def statline_to_inode(statline, parent_directory):

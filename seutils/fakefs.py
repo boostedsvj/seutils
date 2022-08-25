@@ -156,6 +156,9 @@ class FakeFS(object):
             node._content = ''.join(global_rd.choice(choices) for n in range(global_rd.randint(4,200)))
         return node._content
 
+    def cat_bytes(self, path):
+        return self.cat(path)
+
     def mkdir(self, path):
         self.put(path, isdir=True)
 
@@ -176,6 +179,7 @@ class FakeFS(object):
                 seutils.logger.debug('Creating also {0}'.format(parent_dir))
                 self.nodes.append(generate_fake_dir(path=parent_dir))
         return node
+
 
 class FakeRemoteFS(FakeFS):
     def __init__(self, mgm):
@@ -257,6 +261,9 @@ class FakeCommandInterceptor:
         return FakeFSTransaction('listdir', path, stat='-l' in flags)
 
     def cat(self, path, flags):
+        return FakeFSTransaction('cat', path)
+
+    def cat_bytes(self, path, flags):
         return FakeFSTransaction('cat', path)
 
 
