@@ -79,13 +79,14 @@ class XrdImplementation(seutils.Implementation):
         return contents
 
     @seutils.add_env_kwarg
-    def cp(self, src, dst, recursive=False, n_attempts=None, create_parent_directory=True, verbose=True, force=False):
+    def cp(self, src, dst, recursive=False, n_attempts=None, create_parent_directory=True, verbose=True, force=False, parallel=None):
         if n_attempts is None: n_attempts = seutils.N_COPY_ATTEMPTS
         cmd = [ 'xrdcp', src, dst ]
         if not verbose: cmd.insert(1, '-s')
         if create_parent_directory: cmd.insert(1, '-p')
         if force: cmd.insert(1, '-f')
         if recursive: cmd.insert(1, '-r')
+        if parallel: cmd.insert(1, '--parallel ' + str(parallel))
         self.run_command(cmd, n_attempts=n_attempts, path=src+' -> '+dst)
 
     @seutils.add_env_kwarg
