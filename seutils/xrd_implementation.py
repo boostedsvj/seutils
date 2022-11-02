@@ -86,7 +86,9 @@ class XrdImplementation(seutils.Implementation):
         if create_parent_directory: cmd.insert(1, '-p')
         if force: cmd.insert(1, '-f')
         if recursive: cmd.insert(1, '-r')
-        if parallel: cmd.insert(1, '--parallel ' + str(parallel))
+        if parallel:
+            cmd.insert(1, str(parallel))
+            cmd.insert(1, '--parallel')
         self.run_command(cmd, n_attempts=n_attempts, path=src+' -> '+dst)
 
     @seutils.add_env_kwarg

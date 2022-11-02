@@ -76,7 +76,9 @@ class GfalImplementation(seutils.Implementation):
         if verbose: cmd.insert(1, '-v')
         if force: cmd.insert(1, '-f')
         if recursive: cmd.insert(1, '-r')
-        if parallel: cmd.insert(1, '-n ' + str(parallel))
+        if parallel:
+            cmd.insert(1, str(parallel))
+            cmd.insert(1, '-n')
         self.run_command(cmd, n_attempts=n_attempts, path=src+' -> '+dst)
 
     @seutils.add_env_kwarg
