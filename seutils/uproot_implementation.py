@@ -64,11 +64,15 @@ def iter_contents(f, prefix='', seen=None, depth=0):
 
     # Get a name for this node; Can be either the path (if nodelike) or the treename
     try:
-        name = (decode(f.path[-1]) if len(f.path) else '') if is_nodelike else decode(f.name)
-    except AttributeError:
-        # uproot3 compatibility 
-        name = decode(f.name)
-        name = name.split('.root')[-1]
+        try:
+            name = (decode(f.path[-1]) if len(f.path) else '') if is_nodelike else decode(f.name)
+        except AttributeError:
+            # uproot3 compatibility
+            name = decode(f.name)
+            name = name.split('.root')[-1]
+    except Exception:
+        # Catch all case if smarter name-giving fails
+        name = repr(f)
 
     name = os.path.join(prefix, name)
     if name == '': name = '/'
