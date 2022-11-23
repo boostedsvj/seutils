@@ -372,7 +372,7 @@ class RmSafetyTrigger(ExceptionWithPath):
 class NonZeroExitCode(subprocess.CalledProcessError):
     def __init__(self, exitcode='?', cmd='?'):
         self.returncode = exitcode
-        super(Exception, self).__init__('Exit code {} for command {}'.format(cmd, exitcode))
+        super(subprocess.CalledProcessError, self).__init__('Exit code {} for command {}'.format(cmd, exitcode))
 
 
 # _______________________________________________________
