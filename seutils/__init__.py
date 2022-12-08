@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 import os.path as osp
-import logging, subprocess, os, time, sys
+import logging, subprocess, os, time, sys, glob
 from contextlib import contextmanager
 
 from . import path as seup
@@ -706,6 +706,23 @@ def listdir_recursive(directory, stat=False, implementation=None):
         contents.extend(directories)
         contents.extend(files)
     return contents
+
+
+def expand_wildcards(pats):
+    """
+    Expands patterns into full paths, regardless of whether the patterns
+    point to a remote or local place
+    """
+    expanded = []
+    for pat in pats:
+        if '*' in pat:
+            if path.has_protocol(pat):
+                expanded.extend(ls_wildcard(pat))
+            else:
+                expanded.extend(glob.glob(pat))
+        else:
+            expanded.append(pat)
+    return expanded
 
 
 def _sorted_paths_from_set(relpaths_set, relpaths, contents):
