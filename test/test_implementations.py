@@ -245,3 +245,18 @@ def test_load_npz(impl, mocker):
     d = seutils.load_npz('root://foo.bar.gov//foo/bar/bytes.npz')
     np.testing.assert_array_equal(d['a'], np.ones((2,2)))
     np.testing.assert_array_equal(d['b'], np.zeros(1))
+
+
+def test_preferred_implementation():
+    seutils.debug()
+    gfal_is_installed = seutils.gfal._is_installed
+    seutils.gfal._is_installed = True
+    xrd_is_installed = seutils.xrd._is_installed
+    seutils.xrd._is_installed = True
+    try:
+        seutils.set_preferred_implementation('gfal')
+        assert seutils.best_implementation('mkdir') is seutils.gfal
+    finally:
+        seutils.PREFERRED_IMPL = None
+        seutils.gfal._is_installed = gfal_is_installed
+        seutils.xrd._is_installed = xrd_is_installed

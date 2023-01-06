@@ -464,6 +464,17 @@ def get_implementation(implementation_name):
         return None
     return implementations[implementation_name]
 
+
+PREFERRED_IMPL = None
+
+def set_preferred_implementation(implementation):
+    if is_string(implementation):
+        implementation = implementations[implementation]
+    global PREFERRED_IMPL
+    PREFERRED_IMPL = implementation
+    logger.info('Set implementation %s as preferred', PREFERRED_IMPL)
+
+
 def best_implementation(cmd_name, path=None):
     """
     Given a command name, returns an installed implementation that has this command
@@ -475,6 +486,8 @@ def best_implementation(cmd_name, path=None):
         preferred_order = [ eos, gfal, pyxrd, xrd]
     else:
         preferred_order = [ xrd, gfal, pyxrd, eos ]
+    if PREFERRED_IMPL:
+        preferred_order.insert(0, PREFERRED_IMPL)
     # Return first one that's installed
     for implementation in preferred_order:
         if implementation.is_installed() and hasattr(implementation, cmd_name):
