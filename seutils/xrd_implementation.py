@@ -107,13 +107,22 @@ def xrdstatline_to_inode(statline, mgm):
     """
     import datetime
     components = statline.strip().split()
-    if not len(components) == 5:
+    allowed_components = [5,7]
+    if not len(components) in allowed_components:
         raise RuntimeError(
-            'Expected 5 components for stat line:\n{0}'
-            .format(statline)
+            'Expected {} components for stat line:\n{0}'
+            .format(' or '.join(str(c) for c in allowed_components), statline)
             )
-    isdir = components[0].startswith('d')
-    modtime = datetime.datetime.strptime(components[1] + ' ' + components[2], '%Y-%m-%d %H:%M:%S')
-    size = int(components[3])
-    path = seutils.path.format_mgm(mgm, components[4])
+
+    if len(components)==5:
+        # xrd 4 standard
+        ind = [0,1,2,3,4]
+    elif len(components)==7:
+        # xrd 5 standard
+        ind = [0,4,5,3,6]
+
+    isdir = components[ind[0]].startswith('d')
+    modtime = datetime.datetime.strptime(components[ind[1]] + ' ' + components[ind[2]], '%Y-%m-%d %H:%M:%S')
+    size = int(components[ind[3]])
+    path = seutils.path.format_mgm(mgm, components[ind[4]])
     return seutils.Inode(path, modtime, isdir, size)
